@@ -1,0 +1,13 @@
+{
+  "name": "strata",
+  "version": "0.1.0",
+  "description": "Music discovery tree (working title). Zero-dependency prototype: ES modules + Canvas2D.",
+  "type": "module",
+  "scripts": {
+    "pretest": "node tools/build-app.js",
+    "test": "node --test \"test/*.test.js\"",
+    "build": "node tools/build-app.js",
+    "serve": "python3 -m http.server 5173",
+    "docs": "node tools/gen-settings-doc.js && node tools/gen-wheel.js"
+  }
+}
