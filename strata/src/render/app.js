@@ -7,8 +7,8 @@ import { CHRONICLES } from '../data/chronicles.js';
 import { createGame, freshState } from '../core/game.js';
 import { viewLayout } from '../core/views.js';
 import { routeEdges, roundedCommands, endDirection } from '../core/routing.js';
-import { spotlight } from '../core/spotlight.js';
-import { ratingFromFraction, fractionFromValue } from '../core/rating.js';
+import { spotlight, edgeTypeShown } from '../core/spotlight.js';
+import { ratingFromFraction, fractionFromValue, segmentBackground } from '../core/rating.js';
 import { ringFraction, territoryDays } from '../core/recency.js';
 import { creditNames } from '../core/recs.js';
 import { familiesFromTags, tierFromListeners } from '../core/library.js';
@@ -29,7 +29,8 @@ const canvas = $('map'), ctx = canvas.getContext('2d');
 const base = { works: WORKS, edges: EDGES, subgenres: SUBGENRES, chronicles: CHRONICLES };
 
 // ---------- game and saving ----------
-const game = createGame({ base, cfg, state: loadState(store, freshState(WORKS, cfg, Date.now())) });
+// A saved game decides for itself whether the starter catalogue is on. A first visit starts on a blank canvas.
+const game = createGame({ base, cfg, state: loadState(store, freshState(WORKS, cfg, Date.now(), true)) || freshState(WORKS, cfg, Date.now(), false) });
 // ---------- sync: accounts, one shared throttled http client, the engine ----------
 const accounts = loadAccounts(store);
 const http = createHttp({ cfg }); setHttp(http);
@@ -42,6 +43,8 @@ function save() {
   else if (saveState(store, game.state, cfg)) $('saved').textContent = 'Saved locally · ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   else $('saved').textContent = 'Could not save (storage full?)';
 }
+// Account fields are saved as you type, in their own storage key. One listener for the whole page.
+document.addEventListener('change', (e) => { const t = e.target; if (t?.dataset?.provider) { setAccountField(accounts, t.dataset.provider, t.dataset.field, t.value); saveAccounts(store, accounts); } });
 
 // ---------- derived data ----------
 let W = [], byId = {}, genreL = null, L = null, vis = null, E = [], routes = [], sil = [], view = 'genre';
@@ -61,6 +64,8 @@ function recompute(relayout = true) {
   sil = view === 'genre' ? silhouettes() : [];
   queueCovers(); refreshChrome(); draw();
 }
+// works that are on the current map and still exist (visibility can keep ids of works that were removed or hidden)
+const visibleCount = () => [...vis.visible].filter((id) => byId[id] && !hiddenIn().has(id)).length;
 
 // Fogged works just beyond a revealed edge show as faint "?" tiles.
 function silhouettes() {
@@ -107,7 +112,7 @@ async function queueCovers() {
   if (coverBusy || !cfg.get('data.fetchCovers')) return; coverBusy = true;
   try {
     for (const w of W) {
-      if (!shown(w.id) || covers.has(w.id)) continue;
+      if (!shown(w.id) || covers.has(w.id) || w.source === 'bundle') continue;
       covers.set(w.id, { img: null });
       const url = await coverUrlFor(w, cfg); if (!url) continue;
       await new Promise((res) => { const img = new Image(); img.onload = () => { covers.set(w.id, { img }); draw(); if (selected.has(w.id)) showPanel(); res(); }; img.onerror = res; img.src = url; });
@@ -140,6 +145,8 @@ function render() {
   const sl = spotlight({ hoverWork: hover.work, hoverEdge: hover.edge, selected, edges: E, cfg, allTypes: ALL_TYPES });
   const dim = cfg.get('spotlight.dimOpacity'), lit = (id) => !sl.active || sl.works.has(id);
   E.forEach((e, i) => {
+    // A line outside the spotlight is drawn only if its type is ticked in the legend.
+    if (!(sl.active && sl.edges.has(e)) && !edgeTypeShown(e, cfg)) return;
     const isLit = !sl.active || sl.edges.has(e), st = edgeStyle(e);
     ctx.globalAlpha = isLit ? 1 : dim; ctx.strokeStyle = st.color; ctx.lineWidth = isLit && sl.active ? cfg.get('routing.widthSelected') : cfg.get('routing.width'); ctx.setLineDash(st.dash); ctx.lineCap = st.dash[0] < 2 ? 'round' : 'butt';
     ctx.beginPath(); tracePath(routes[i].points); ctx.stroke(); ctx.setLineDash([]);
@@ -160,6 +167,11 @@ function render() {
     ctx.fillStyle = '#0B0E12'; ctx.strokeStyle = st.color; ctx.lineWidth = 1; ctx.beginPath(); ctx.roundRect(m.x - wd / 2, m.y - 10, wd, 20, 10); ctx.fill(); ctx.stroke(); ctx.fillStyle = st.color; ctx.fillText(label, m.x, m.y + 1);
   }
   ctx.restore();
+  if (!W.length) {   // blank canvas: say what to do instead of showing nothing
+    ctx.setTransform(r, 0, 0, r, 0, 0); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = cfg.get('ui.text'); ctx.font = '600 18px system-ui'; ctx.fillText('Nothing on the map yet', innerWidth / 2, innerHeight / 2 - 14);
+    ctx.fillStyle = cfg.get('ui.mutedText'); ctx.font = '13px system-ui'; ctx.fillText('Open the Shelf and add something you have heard, or switch on the demo catalogue to try the app.', innerWidth / 2, innerHeight / 2 + 12);
+  }
   drawMinimap(); hud();
 }
 
@@ -179,7 +191,8 @@ function drawTerritories() {
 }
 
 function drawTimeFrame() {
-  const xs = Object.values(L.pos).map((p) => p.x), x0 = Math.min(...xs) - 160, x1 = Math.max(...xs) + 160, lanes = L.lanes || [];
+  const xs = Object.values(L.pos).map((p) => p.x); if (!xs.length) return;
+  const x0 = Math.min(...xs) - 160, x1 = Math.max(...xs) + 160, lanes = L.lanes || [];
   ctx.textBaseline = 'middle'; ctx.font = '12px ui-monospace, monospace';
   for (const ln of lanes) { const h = cfg.get(`genres.${ln.fam}.hue`); ctx.strokeStyle = hsl(h, 50, 45, 0.25); ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x0, ln.y); ctx.lineTo(x1, ln.y); ctx.stroke(); ctx.fillStyle = hsl(h, 70, 72); ctx.textAlign = 'left'; ctx.fillText(cfg.get(`genres.${ln.fam}.name`).toUpperCase(), x0, ln.y - 20); }
   if (cfg.get('views.showDecades') && lanes.length) {
@@ -210,6 +223,7 @@ function drawTile(w, tile, alpha) {
   const rw = cfg.get('tiers.ringWidth'), gap = cfg.get('tiers.ringGap'), rc = tierColor(w.tier, cfg);
   ctx.globalAlpha = alpha;
   ctx.lineWidth = rw; ctx.strokeStyle = rc; ctx.beginPath(); ctx.roundRect(x - gap - rw / 2, y - gap - rw / 2, s + 2 * gap + rw, s + 2 * gap + rw, 9); ctx.stroke();
+  if (w.source === 'bundle') { ctx.strokeStyle = rc; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.roundRect(x - gap - rw - 4, y - gap - rw - 4, s + 2 * (gap + rw + 4), s + 2 * (gap + rw + 4), 12); ctx.stroke(); }   // a second outline marks a bundle
   ctx.globalAlpha = alpha * (w.heard ? cfg.get('ui.seenDim') : cfg.get('ui.unheardBrightness'));
   const img = coverOf(w.id);
   if (img) { ctx.save(); ctx.beginPath(); ctx.roundRect(x, y, s, s, 6); ctx.clip(); ctx.drawImage(img, x, y, s, s); ctx.restore(); }
@@ -236,14 +250,14 @@ function drawMinimap() {
 }
 mini.addEventListener('pointerdown', (e) => { if (!miniMap) return; const r = mini.getBoundingClientRect(), wx = (e.clientX - r.left - miniMap.ox) / miniMap.k, wy = (e.clientY - r.top - miniMap.oy) / miniMap.k; vw.x = innerWidth / 2 - wx * vw.k; vw.y = innerHeight / 2 - wy * vw.k; draw(); });
 
-function hud() { $('hud').textContent = `${[...vis.visible].filter((id) => !hiddenIn().has(id)).length}/${W.length} visible · zoom ${vw.k.toFixed(2)} · selected ${selected.size}${view !== 'genre' && hiddenIn().size ? ` · ${hiddenIn().size} not placeable here` : ''}`; }
+function hud() { $('hud').textContent = `${visibleCount()}/${W.length} visible · zoom ${vw.k.toFixed(2)} · selected ${selected.size}${view !== 'genre' && hiddenIn().size ? ` · ${hiddenIn().size} not placeable here` : ''}`; }
 
 // ---------- map interaction ----------
 function pick(sx, sy) {
   const p = toWorld(sx, sy), tile = cfg.get('layout.tileSize');
   for (const w of W) { if (!shown(w.id)) continue; const q = L.pos[w.id]; if (Math.abs(p.x - q.x) <= tile / 2 + 6 && Math.abs(p.y - q.y) <= tile / 2 + 6) return { work: w.id, play: Math.hypot(p.x - q.x, p.y - q.y) < 15 }; }
   let best = null;
-  E.forEach((e, i) => { const pts = routes[i].points; for (let k = 1; k < pts.length; k++) { const a = pts[k - 1], b = pts[k], dx = b.x - a.x, dy = b.y - a.y, t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy || 1))), d = Math.hypot(a.x + dx * t - p.x, a.y + dy * t - p.y); if (d < 8 / vw.k && (!best || d < best.d)) best = { d, edge: e }; } });
+  E.forEach((e, i) => { if (!edgeTypeShown(e, cfg)) return; const pts = routes[i].points; for (let k = 1; k < pts.length; k++) { const a = pts[k - 1], b = pts[k], dx = b.x - a.x, dy = b.y - a.y, t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy || 1))), d = Math.hypot(a.x + dx * t - p.x, a.y + dy * t - p.y); if (d < 8 / vw.k && (!best || d < best.d)) best = { d, edge: e }; } });
   return best ? { edge: best.edge } : {};
 }
 let drag = null;
@@ -270,7 +284,7 @@ function toast(msg, big = false) { const t = document.createElement('div'); t.cl
 function announce(res) {
   if (!res.ok) return toast(res.reason || 'Could not do that.');
   if (res.note) return toast(res.note);
-  toast(`+${res.xp} XP${res.predicted != null ? ` · the map expected ${res.predicted.toFixed(1)}` : ''}${res.firstInFamily ? ' · new territory' : ''}`, true);
+  toast(`+${res.xp} XP${res.predicted != null && cfg.get('ui.showPrediction') ? ` · the map expected ${res.predicted.toFixed(1)}` : ''}${res.firstInFamily ? ' · new territory' : ''}`, true);
   if (res.thread) toast(`Thread: ${res.thread.label}, chain of ${res.thread.links}`);
   for (const ev of res.events) {
     if (ev.type === 'levelUp') toast(`Level ${ev.level}`, true);
@@ -283,7 +297,7 @@ function announce(res) {
 
 // ---------- chrome: shelf, threads, level box, tabs, legend, tools, minimap text ----------
 function refreshChrome() {
-  $('shelf').innerHTML = shelfHTML(W, cfg, [...selected].pop(), game.pendingWorks());
+  $('shelf').innerHTML = shelfHTML(W, cfg, [...selected].pop(), game.pendingWorks()) + `<button class="dashed" data-act="toggleDemo" title="The 70 starter works, their connections and chronicles. Turning it off only hides them.">Demo catalogue (70 starter works): ${game.demo() ? 'ON, click to hide' : 'OFF, click to show'}</button>`;
   const th = game.threads();
   $('threads').innerHTML = `<b class="mono lab">THREADS</b>${th.map((t) => `<button class="thread${t.active ? ' active' : ''}" data-act="threadGo" data-id="${esc(t.ids[t.ids.length - 1])}" title="${esc(t.kind)}">${esc(t.label)} · ${t.active ? `chain of ${t.links}` : `paused at ${t.links}`}</button>`).join('')}<button class="thread" style="border-style:dashed" data-act="startThread" data-id="${esc([...selected].pop() || '')}">+ start a thread</button><span class="sp"></span><span class="muted small">Jumping around never resets a thread</span>`;
   const lv = game.level();
@@ -292,29 +306,52 @@ function refreshChrome() {
   const ch = game.state.charges, any = ch.flare || ch.dowse || ch.roll;
   $('tools').style.display = any || mode ? 'flex' : 'none';
   $('tools').innerHTML = `${ch.flare ? `<button data-act="toolFlare">${mode === 'flare' ? 'Click the map…' : `Flare ×${ch.flare}`}</button>` : ''}${ch.dowse ? `<button data-act="toolDowse">Dowse ×${ch.dowse}</button>` : ''}${ch.roll ? `<button data-act="toolRoll">Rarity roll ×${ch.roll}</button>` : ''}`;
-  const seen = vis.visible.size, scouted = W.filter((w) => !w.heard && vis.visible.has(w.id)).length;
+  const seen = visibleCount(), scouted = W.filter((w) => !w.heard && vis.visible.has(w.id)).length;
   const unexplored = FAMILY_IDS.filter((f) => !W.some((w) => w.heard && (w.fam[FAMILY_IDS.indexOf(f)] || 0) >= 0.5));
-  $('minitext').innerHTML = `<span style="color:var(--text)">${seen} revealed</span><br>${scouted} scouted, unheard<br>${W.length - seen} still in fog<br>${unexplored.length ? `<span class="amber-t">${esc(cfg.get(`genres.${unexplored[0]}.name`))}: never visited</span>` : 'every family visited'}`;
+  $('minitext').innerHTML = `<span style="color:var(--text)">${seen} revealed</span><br>${scouted} scouted, unheard<br>${W.length - seen} still in fog<br>${W.length ? (unexplored.length ? `<span class="amber-t">${esc(cfg.get(`genres.${unexplored[0]}.name`))}: never visited</span>` : 'every family visited') : ''}`;
 }
+// The legend does two jobs. With nothing selected, a ticked type is a line you can see. With a selection, chains also continue along ticked types.
 function buildLegend() {
-  const el = $('legend'); el.innerHTML = '<h3>CHAINS FOLLOW</h3>';
-  for (const t of ['precedent', 'inspired', 'contemporary', 'personnel', 'sample']) {
-    const lab = document.createElement('label'); lab.innerHTML = `<input type="checkbox" ${cfg.get('spotlight.follow.' + t) ? 'checked' : ''}><span class="sw" style="border-color:${cfg.get(`routing.${t}.color`)}"></span>${t}`;
+  const el = $('legend'); el.innerHTML = '<h3>LINES AND CHAINS</h3><div class="muted" style="font-size:11px;line-height:15px">Ticked types are drawn. A selection also follows them.</div>';
+  for (const t of ['precedent', 'inspired', 'contemporary', 'personnel', 'sample', 'other']) {
+    const lab = document.createElement('label'); lab.innerHTML = `<input type="checkbox" ${cfg.get('spotlight.follow.' + t) ? 'checked' : ''}><span class="sw" style="border-color:${cfg.get(`routing.${t}.color`)}"></span>${t === 'other' ? 'similar' : t}`;
     lab.querySelector('input').addEventListener('change', (e) => { cfg.set('spotlight.follow.' + t, e.target.checked); draw(); }); el.appendChild(lab);
   }
-  const h = document.createElement('h3'); h.textContent = 'RARITY RINGS'; h.style.marginTop = '8px'; el.appendChild(h);
-  const row = document.createElement('div'); row.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px 10px;font-size:11px;color:var(--muted)';
-  row.innerHTML = TIER_IDS.map((t) => `<span style="display:flex;align-items:center;gap:5px"><span style="width:12px;height:12px;border-radius:3px;border:3px solid ${cfg.get(`tiers.${t}.color`)}"></span>${esc(cfg.get(`tiers.${t}.name`))}</span>`).join(''); el.appendChild(row);
-  const n = document.createElement('div'); n.style.cssText = 'font-size:11px;color:var(--muted);margin-top:6px;line-height:15px'; n.textContent = 'Dim art = heard. Bright art = not heard yet. Gauge in the corner = how recently you engaged. Hue is genre; where two meet you see the blend. Dark areas are fog you have not explored. "?" tiles hint at something just past the edge.'; el.appendChild(n);
+  const h = document.createElement('h3'); h.textContent = 'RARITY RINGS'; h.style.marginTop = '6px'; el.appendChild(h);
+  const row = document.createElement('div'); row.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;font-size:11px';
+  row.innerHTML = TIER_IDS.map((t) => `<span style="border:2px solid ${cfg.get(`tiers.${t}.color`)};border-radius:9px;padding:0 7px;line-height:16px;color:var(--text)">${esc(cfg.get(`tiers.${t}.name`))}</span>`).join(''); el.appendChild(row);
+  const n = document.createElement('div'); n.style.cssText = 'font-size:11px;color:var(--muted);margin-top:4px;line-height:15px'; n.textContent = 'Dim art = heard. Bright art = not heard yet. Corner gauge = how recently you engaged. Hue is genre. Dark areas are fog. "?" tiles hint at something past the edge. A double outline is a bundle.'; el.appendChild(n);
 }
 function setMode(m) { mode = m; canvas.style.cursor = m ? 'crosshair' : 'default'; if (vis) refreshChrome(); }
+
+// ---------- rating bar ----------
+// One striped segment per rating, top rating first. The dim track shows the scale, the fill (same stripes, full strength) is clipped to the rating.
+function buildBar() {
+  const lo = cfg.get('rating.min'), hi = cfg.get('rating.max'), n = hi - lo + 1;
+  let segs = ''; for (let k = hi; k >= lo; k--) segs += `<i style="background:${segmentBackground(k, cfg)}"></i>`;
+  const tick = (f, major) => `<u class="${major ? 'major' : ''}" style="bottom:${(f * 100).toFixed(3)}%"></u>`;
+  let ticks = '';
+  for (let s = 0; s < n; s++) { if (s < n - 1) ticks += tick((s + 1 / 3) / n) + tick((s + 2 / 3) / n); if (s > 0) ticks += tick(s / n, true); }
+  $('ratingbar').innerHTML = `<div id="ratingtrack" class="segs" style="opacity:${cfg.get('rating.trackDim')}">${segs}</div><div id="ratingfill" class="segs" style="clip-path:inset(100% 0 0 0)">${segs}</div><div id="ratingticks" class="${cfg.get('rating.showTicks') ? '' : 'off'}">${ticks}</div><div id="ratinghover"></div>`;
+}
+function setBarFill(value) { const f = value > 0 ? fractionFromValue(value, cfg) : 0; $('ratingfill').style.clipPath = `inset(${((1 - f) * 100).toFixed(2)}% 0 0 0)`; }
 
 // ---------- info panel ----------
 let audio = null;
 const selectedId = () => [...selected].pop();
+// Buttons for removing added works and for bundling. Shift-click works on the map to select several.
+function libraryTools(w) {
+  const sel = [...selected], removable = sel.filter((i) => byId[i]?.user && byId[i].source !== 'bundle');
+  let h = '';
+  if (w.source === 'bundle') h += `<div class="hr"></div><span class="mono lab">BUNDLE OF ${w.members.length}</span><div class="chips">${w.members.map((m) => `<span class="chip">${esc(m.title)}</span>`).join('')}</div><div class="muted small">The rating is the average of the parts until you rate the bundle yourself. Genres, credits and badges are combined.</div><div class="growrow"><button class="grow-btn" data-act="unbundle" data-id="${esc(w.id)}">Unbundle</button></div>`;
+  else if (w.user) h += `<div class="growrow"><button class="grow-btn" data-act="removeWork" data-id="${esc(w.id)}">Remove from my library</button></div>`;
+  if (sel.length > 1) h += `<div class="hr"></div><span class="mono lab">${sel.length} SELECTED</span><div class="fld"><input type="text" id="bundlename" placeholder="Bundle name, e.g. the two-part album"></div><div class="growrow"><button class="grow-btn" data-act="bundleMake">Bundle selected</button>${removable.length > 1 ? `<button class="grow-btn" data-act="removeSelected">Remove ${removable.length} added</button>` : ''}</div>`;
+  else if (w.source !== 'bundle') h += '<div class="muted small" style="margin-top:6px">Shift-click more works to bundle them or remove several at once.</div>';
+  return h;
+}
 function showPanel() {
   const panel = $('panel'), id = selectedId(); refreshChrome();
-  if (!id) { panel.style.display = 'none'; return; }
+  if (!id || !byId[id]) { panel.style.display = 'none'; return; }
   const w = byId[id]; panel.style.display = 'block';
   const growCounts = {}; for (const k of ['precedent', 'inspired', 'contemporary', 'sample', 'personnel']) growCounts[k] = game.growCandidates(id, k).filter((x) => !x.heard && !vis.visible.has(x.id)).length;
   const src = coverOf(id);
@@ -325,51 +362,73 @@ function showPanel() {
     predicted: game.predicted(id), credits: game.credits(id), growCounts, charges: game.state.charges, cover: src ? src.src : null,
     slots: game.slots(), placed: game.state.placed.includes(id), dowse: !!(game.state.dowse && game.state.dowse.id === id),
     prov: game.provenance(id), canArtist: !!game.state.facts[id]?.artistMbids?.length
-  }, cfg) + '<div class="hr"></div><span class="mono lab">ABOUT</span><p id="bio" class="muted small">Loading…</p><span class="mono lab">ON MUSICBRAINZ</span><p id="mb" class="muted small">Loading…</p>';
-  $('ratingfill').style.height = (w.heard ? fractionFromValue(w.rating, cfg) * 100 : 0) + '%';
+  }, cfg) + libraryTools(w) + '<div class="hr"></div><span class="mono lab">ABOUT</span><p id="bio" class="muted small">Loading…</p><span class="mono lab">ON MUSICBRAINZ</span><p id="mb" class="muted small">Loading…</p>';
+  setBarFill(w.heard ? w.rating : 0);
+  if (w.source === 'bundle') { $('bio').textContent = 'A bundle you made.'; $('mb').textContent = 'Not applicable to a bundle. Select a part to see it.'; return; }
   fetchBio(w.title, w.artist, cfg).then((b) => { if ($('bio') && selectedId() === id) $('bio').innerHTML = b ? `${esc(b.text)} <a href="${esc(b.url)}" target="_blank" rel="noopener" style="color:var(--accent)">${esc(b.source)}</a>` : 'No bio found.'; });
   lookupReleaseGroup(w, cfg).then((r) => { if ($('mb') && selectedId() === id) $('mb').textContent = r ? `${r.genres.concat(r.tags).slice(0, 8).join(', ') || 'no tags'}; ${r.relations.length} relationships` : 'Not found on MusicBrainz.'; });
 }
 async function playPreview(id) {
-  const w = byId[id]; const p = await fetchPreview(w.title, w.artist, cfg);
+  const w = byId[id]; if (!w || w.source === 'bundle') return toast('Select one of the parts to play it.');
+  const p = await fetchPreview(w.title, w.artist, cfg);
   if (!p) return toast('No preview found (Deezer needs a CORS proxy; try iTunes in settings).');
   audio?.pause(); audio = new Audio(p.url); audio.play();
   if (cfg.get('recency.countPlayAsEngaged')) { game.touch(id); draw(); }
 }
+buildBar();
 (() => {
-  const bar = $('ratingbar'), tip = $('ratingtip'), hv = $('ratinghover');
+  const bar = $('ratingbar'), tip = $('ratingtip');
   const frac = (e) => { const r = bar.getBoundingClientRect(); return 1 - Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)); };
-  bar.addEventListener('mousemove', (e) => { const f = frac(e), r = ratingFromFraction(f, cfg); tip.style.display = 'block'; tip.style.left = e.clientX + 18 + 'px'; tip.style.top = e.clientY - 14 + 'px'; tip.textContent = r.label + (cfg.get('rating.showNumeric') ? ` (${r.value})` : ''); hv.style.display = 'block'; hv.style.bottom = f * 100 + '%'; });
-  bar.addEventListener('mouseleave', () => { tip.style.display = 'none'; hv.style.display = 'none'; });
+  // the marker snaps to the center of a third or to a border tick, wherever the pointer is inside that zone
+  bar.addEventListener('mousemove', (e) => { const r = ratingFromFraction(frac(e), cfg), hv = $('ratinghover'); tip.style.display = 'block'; tip.style.left = e.clientX + 18 + 'px'; tip.style.top = e.clientY - 14 + 'px'; tip.textContent = r.label + (cfg.get('rating.showNumeric') ? ` (${r.value})` : ''); hv.style.display = 'block'; hv.style.bottom = (r.snap * 100) + '%'; });
+  bar.addEventListener('mouseleave', () => { tip.style.display = 'none'; $('ratinghover').style.display = 'none'; });
   bar.addEventListener('click', (e) => { const id = selectedId(); if (!id) return; const r = ratingFromFraction(frac(e), cfg); announce(game.rate(id, r.value)); afterChange(false); });
 })();
 
 // Everything that changes state ends here: save, recompute, redraw panels.
 function afterChange(relayout) { save(); recompute(relayout); showPanel(); if (modalName) openModal(modalName); }
 
-// ---------- modals ----------
-let modalName = null;
+// ---------- left slideouts, full modals and the nav buttons ----------
+// Shelf, quests and shop slide in from the left. Progress and sync fill the screen. Only one is open at a time.
+let modalName = null, shelfOpen = false;
+const SLIDE = new Set(['quests', 'shop']);
+const NAV = { progress: 'btnProgress', quests: 'btnQuests', shop: 'btnShop', sync: 'btnSync' };
+function markNav() {
+  for (const [k, id] of Object.entries(NAV)) $(id).classList.toggle('on', modalName === k);
+  $('btnShelf').classList.toggle('on', shelfOpen);
+  $('btnSettings').classList.toggle('on', $('settings').style.display === 'flex');
+}
+function setShelf(on) { shelfOpen = on; $('shelf').classList.toggle('open', on); markNav(); }
+function replay(el) { el.classList.remove('enter'); void el.offsetWidth; el.classList.add('enter'); }
 function openModal(name) {
-  modalName = name; $('modal').style.display = 'flex'; $('modaltitle').textContent = { progress: 'Progress', quests: 'Quests', shop: 'Shop', sync: 'Sync' }[name];
-  document.addEventListener('change', (e) => { const t = e.target; if (t?.dataset?.provider) { setAccountField(accounts, t.dataset.provider, t.dataset.field, t.value); saveAccounts(store, accounts); } });
-document.querySelectorAll('#modal [data-modal]').forEach((b) => b.classList.toggle('on', b.dataset.modal === name));
+  const wasOpen = modalName === name;
+  if (shelfOpen) setShelf(false);
+  modalName = name; const m = $('modal'); m.style.display = 'flex'; m.classList.toggle('slide', SLIDE.has(name));
+  if (!wasOpen) replay(m);
+  $('modaltitle').textContent = { progress: 'Progress', quests: 'Quests', shop: 'Shop', sync: 'Sync' }[name];
+  markNav();
   const body = $('modalbody');
-  if (name === 'progress') body.innerHTML = progressHTML({ level: game.level(), rested: game.state.rested, points: game.state.points, xp: game.state.xp, stats: game.state.stats, longest: game.state.longestChain, reveal: game.reveal(vis.visible), taste: game.taste(), ms: vis.ms, charters: game.state.charters }, cfg) + '<div class="pad"><button data-act="exportSave">Export save</button> <button data-act="importSave">Import save</button> <button data-act="resetProgress">Reset progress</button></div>';
+  if (name === 'progress') body.innerHTML = progressHTML({ level: game.level(), rested: game.state.rested, points: game.state.points, xp: game.state.xp, stats: game.state.stats, longest: game.state.longestChain, reveal: game.reveal(vis.visible), taste: game.taste(), ms: vis.ms, charters: game.state.charters }, cfg);
   if (name === 'quests') body.innerHTML = questsHTML(game.board(), cfg);
   if (name === 'shop') body.innerHTML = shopHTML(game.shopItems(), game.state.points);
   if (name === 'sync') {
-    const queue = enrichmentQueue(game.state, [...game.works(), ...game.pendingWorks()], cfg, syncUi.scope);
+    const queue = enrichmentQueue(game.state, [...game.allWorks(), ...game.pendingWorks()], cfg, syncUi.scope);
     body.innerHTML = syncHTML({ summary: game.syncSummary(), providers: PROVIDERS, accounts, ui: syncUi, estimate: engine.estimate(queue), queue, policy: cfg.get('sync.unverifiedSeed'), scope: syncUi.scope }, cfg);
   }
 }
-const closeModal = () => { modalName = null; $('modal').style.display = 'none'; };
+const closeModal = () => { modalName = null; $('modal').style.display = 'none'; markNav(); };
+// clicking the active button again closes it
+const toggleModal = (name) => (modalName === name ? closeModal() : openModal(name));
 
-// ---------- add a work ----------
+// ---------- add works: one at a time, one after another, or a pasted list ----------
 let addResults = [], addPicked = null;
 function openAdd() {
   const d = $('adddlg'); d.style.display = 'flex';
-  const rs = [], step = cfg.get('rating.subStep');
-  for (let n = cfg.get('rating.max'); n >= cfg.get('rating.min'); n--) for (const [lab, off] of [['strong', step], ['decent', 0], ['light', -step]]) rs.push(`<option value="${n + off}" ${n === 8 && lab === 'decent' ? 'selected' : ''}>${lab} ${n}</option>`);
+  const rs = [], step = cfg.get('rating.subStep'), hi = cfg.get('rating.max');
+  for (let n = hi; n >= cfg.get('rating.min'); n--) {
+    if (n >= hi) { rs.push(`<option value="${n}">${n}</option>`); continue; }   // the top rating has no light, decent or strong
+    for (const [lab, off] of [['strong', step], ['decent', 0], ['light', -step]]) rs.push(`<option value="${n + off}" ${n === 8 && lab === 'decent' ? 'selected' : ''}>${lab} ${n}</option>`);
+  }
   d.innerHTML = `<b style="font-size:16px">Add something I've heard</b>
 <div style="display:flex;gap:8px"><input type="text" id="addq" placeholder="Album and artist, e.g. Madvillainy Madvillain"><button data-act="addSearch">Search</button></div>
 <div id="addres" class="muted small">Search MusicBrainz, or fill the fields below by hand.</div>
@@ -378,7 +437,11 @@ function openAdd() {
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><label>Rarity<select id="addtier">${TIER_IDS.map((t, i) => `<option value="${i}" ${i === cfg.get('data.defaultTier') ? 'selected' : ''}>${esc(cfg.get(`tiers.${t}.name`))}</option>`).join('')}</select></label>
 <label>Your rating<select id="addrating">${rs.join('')}</select></label></div>
 <label><input type="checkbox" id="addheard" checked> I have heard it (earns XP). Untick to just put it on the map.</label>
-<div style="display:flex;gap:8px;justify-content:flex-end"><button data-act="addCancel">Cancel</button><button data-act="addConfirm" style="background:var(--text);color:var(--bg)">Add to map</button></div>`;
+<div style="display:flex;gap:8px;justify-content:flex-end"><button data-act="addCancel">Close</button><button data-act="addConfirmMore">Add and keep going</button><button data-act="addConfirm" style="background:var(--text);color:var(--bg)">Add and close</button></div>
+<div class="hr"></div><span class="mono lab">OR PASTE A LIST</span>
+<div class="muted small">One per line, as "Artist - Title". Each is looked up on MusicBrainz and added as heard but unrated, with no XP. Works with no recognisable genre wait on the shelf for you to pick a family.</div>
+<textarea id="addbulk" rows="5" style="background:#0B0E12;border:1px solid #3A4452;border-radius:8px;padding:6px 10px;width:100%;color:inherit;font:inherit" placeholder="Nas - Illmatic&#10;Aesop Rock - The Impossible Kid"></textarea>
+<div style="display:flex;justify-content:flex-end"><button data-act="addBulk">Look up and add the list</button></div>`;
   addResults = []; addPicked = null;
 }
 async function addSearch() {
@@ -414,13 +477,36 @@ async function runSync(kind, id) {
   } catch (e) { syncUi.messages[kind === 'verify' ? 'verify' : id] = { ok: false, message: e.message }; }
   syncUi.busy = null; syncUi.progress = null; afterChange(true);
 }
-function addConfirm() {
+// keepOpen: clear the form and stay in the dialog so the next work can go straight in.
+function addConfirm(keepOpen = false) {
   const picked = [...document.querySelectorAll('#addfams input')].filter((c) => c.checked).map((c) => Number(c.dataset.fam));
   const fam = {}; picked.forEach((i) => { fam[i] = Math.round(100 / picked.length) / 100; });
   const res = game.addWork({ title: $('addtitle').value.trim(), artist: $('addartist').value.trim(), year: Number($('addyear').value) || new Date().getFullYear(), fam: picked.length ? fam : null, tags: addPicked?.tags, tier: Number($('addtier').value), mbid: addPicked?.mbid, heard: $('addheard').checked, rating: Number($('addrating').value) });
   if (!res.ok) { if (res.id) { $('adddlg').style.display = 'none'; selected = new Set([res.id]); afterChange(true); centerOn(res.id); } return toast(res.reason); }
-  $('adddlg').style.display = 'none'; selected = new Set([res.id]); if (res.rate) announce(res.rate); toast(`Added with ${res.links} connection${res.links === 1 ? '' : 's'}.`);
-  afterChange(true); centerOn(res.id);
+  selected = new Set([res.id]); if (res.rate) announce(res.rate); toast(`Added with ${res.links} connection${res.links === 1 ? '' : 's'}.`);
+  if (keepOpen) {
+    for (const id of ['addq', 'addtitle', 'addartist', 'addyear']) $(id).value = '';
+    document.querySelectorAll('#addfams input').forEach((c) => { c.checked = false; });
+    $('addres').textContent = 'Added. Search for the next one, or fill the fields by hand.'; addResults = []; addPicked = null; afterChange(true); $('addq').focus?.(); return;
+  }
+  $('adddlg').style.display = 'none'; afterChange(true); centerOn(res.id);
+}
+// Pasted list: "Artist - Title" per line, looked up one at a time (MusicBrainz allows about one request a second).
+async function bulkAdd() {
+  const lines = $('addbulk').value.split('\n').map((s) => s.trim()).filter(Boolean); if (!lines.length) return toast('Paste at least one line.');
+  const recs = []; let missed = 0;
+  for (let i = 0; i < lines.length; i++) {
+    $('addres').textContent = `Looking up ${i + 1} of ${lines.length}…`;
+    const m = /^(.+?)\s+[-–—]\s+(.+)$/.exec(lines[i]), artist = m ? m[1].trim() : '', title = m ? m[2].trim() : lines[i];
+    let hit = null; try { hit = (await searchReleaseGroups(artist ? `releasegroup:"${title}" AND artist:"${artist}"` : title, cfg))[0] || null; } catch { /* treated as not found */ }
+    if (hit) recs.push({ source: 'manual', title: hit.title, artist: hit.artist, mbid: hit.mbid, year: hit.year, genres: hit.tags });
+    else if (artist) recs.push({ source: 'manual', title, artist });
+    else missed++;
+  }
+  const r = game.importRecords(recs, 'manual');
+  $('adddlg').style.display = 'none';
+  toast(`${r.added.length} added, ${r.matched.length} already in your library${r.unclassified.length ? `, ${r.unclassified.length} need a genre family (see the shelf)` : ''}${missed ? `, ${missed} not found (use "Artist - Title" for those)` : ''}.`, true);
+  afterChange(true);
 }
 
 // ---------- search ----------
@@ -448,6 +534,12 @@ document.addEventListener('click', (e) => {
     case 'select': case 'threadGo': case 'searchPick': if (id) { if (!shown(id)) { toast('That work is not on this view.'); break; } $('results').style.display = 'none'; sel(id); } break;
     case 'view': setView(id); break;
     case 'play': playPreview(selectedId()); break;
+    case 'wheelExpand': t.classList.toggle('expanded'); break;
+    case 'toggleDemo': { game.setDemo(!game.demo()); selected.clear(); toast(game.demo() ? 'Demo catalogue on.' : 'Demo catalogue hidden. Your own works stay.'); afterChange(true); fitView(); break; }
+    case 'removeWork': { const w = byId[id]; if (!confirm(`Remove "${w ? w.title : 'this work'}" from your library? Its rating and connections go with it.`)) break; const r = game.removeWork(id); if (!r.ok) toast(r.reason); else { selected.delete(id); toast('Removed.'); } afterChange(true); break; }
+    case 'removeSelected': { const ids = [...selected].filter((i) => byId[i]?.user && byId[i].source !== 'bundle'); if (!confirm(`Remove ${ids.length} works you added? Their ratings and connections go with them.`)) break; const r = game.removeMany(ids); toast(r.ok ? `Removed ${r.removed}.` : r.reason); selected.clear(); afterChange(true); break; }
+    case 'bundleMake': { const r = game.makeBundle([...selected], $('bundlename')?.value); if (!r.ok) { toast(r.reason); break; } selected = new Set([r.id]); toast('Bundled. Rate it, or let the average of the parts stand.'); afterChange(true); centerOn(r.id); break; }
+    case 'unbundle': { const r = game.unbundle(id); if (!r.ok) toast(r.reason); else { selected.clear(); toast('Unbundled. The parts are back on the map.'); } afterChange(true); break; }
     case 'grow': { const r = game.grow(id, t.dataset.kind); toast(r.ok ? `${r.added.length} new on the map${r.added.length < r.shown.length ? ` (${r.shown.length - r.added.length} already there)` : ''}` : r.reason); afterChange(false); break; }
     case 'creditGrow': { const r = game.grow(id, 'credit', t.dataset.name); toast(r.ok ? `Following ${t.dataset.name}: ${r.added.length} new` : r.reason); afterChange(false); break; }
     case 'creditReveal': { const r = game.revealCredit(id, t.dataset.kind); if (!r.ok) toast(r.reason); afterChange(false); break; }
@@ -457,7 +549,9 @@ document.addEventListener('click', (e) => {
     case 'addCancel': $('adddlg').style.display = 'none'; break;
     case 'addSearch': addSearch(); break;
     case 'addPick': addPick(Number(t.dataset.i)); break;
-    case 'addConfirm': addConfirm(); break;
+    case 'addConfirm': addConfirm(false); break;
+    case 'addConfirmMore': addConfirm(true); break;
+    case 'addBulk': bulkAdd(); break;
     case 'openShop': openModal('shop'); break;
     case 'syncTest': runSync('test', id); break;
     case 'syncImport': runSync('import', id); break;
@@ -476,24 +570,29 @@ document.addEventListener('click', (e) => {
     case 'toolFlare': if (view !== 'genre') toast('Flares work in the genre view.'); else setMode(mode === 'flare' ? null : 'flare'); break;
     case 'toolDowse': {
       const c = toWorld(innerWidth / 2, innerHeight / 2), origin = selectedId() ? genreL.hex[selectedId()] : genreL.lattice.toAxial(c.x, c.y);
-      const r = game.useDowse(origin, genreL.hex, genreL.lattice); toast(r.ok ? `A rod points to ${byId[r.id].title}, expected ${r.predicted.toFixed(1)}.` : r.reason, r.ok);
+      const r = game.useDowse(origin, genreL.hex, genreL.lattice); toast(r.ok ? `A rod points to ${byId[r.id].title}${cfg.get('ui.showPrediction') ? `, expected ${r.predicted.toFixed(1)}` : ''}.` : r.reason, r.ok);
       afterChange(false); if (r.ok && L.pos[r.id]) centerOn(r.id); break;
     }
     case 'toolRoll': { const r = game.useRoll(); toast(r.ok ? 'The roll revealed a rarer work.' : r.reason, r.ok); afterChange(false); if (r.ok && L.pos[r.id]) centerOn(r.id); break; }
     case 'exportSave': { const el = document.createElement('a'); el.href = URL.createObjectURL(new Blob([exportState(game.state)], { type: 'application/json' })); el.download = 'strata-save.json'; el.click(); break; }
-    case 'importSave': { const i = document.createElement('input'); i.type = 'file'; i.accept = '.json'; i.onchange = async () => { try { game.replaceState(importState(await i.files[0].text(), freshState(WORKS, cfg, Date.now()))); selected.clear(); afterChange(true); toast('Save imported.'); } catch (err) { toast(err.message); } }; i.click(); break; }
-    case 'resetProgress': if (!cfg.get('persist.confirmReset') || confirm('Reset all progress? Settings are kept.')) { game.replaceState(freshState(WORKS, cfg, Date.now())); selected.clear(); afterChange(true); } break;
+    case 'importSave': { const i = document.createElement('input'); i.type = 'file'; i.accept = '.json'; i.onchange = async () => { try { game.replaceState(importState(await i.files[0].text(), freshState(WORKS, cfg, Date.now(), true))); selected.clear(); afterChange(true); toast('Save imported.'); } catch (err) { toast(err.message); } }; i.click(); break; }
+    case 'resetProgress': if (!cfg.get('persist.confirmReset') || confirm('Reset all progress? Settings are kept.')) { game.replaceState(freshState(WORKS, cfg, Date.now(), game.demo())); selected.clear(); afterChange(true); } break;
   }
 });
-document.querySelectorAll('#modal [data-modal]').forEach((b) => b.addEventListener('click', () => openModal(b.dataset.modal)));
-$('modalClose').onclick = closeModal; $('btnProgress').onclick = () => openModal('progress'); $('btnQuests').onclick = () => openModal('quests'); $('btnShop').onclick = () => openModal('shop'); $('btnSync').onclick = () => openModal('sync'); $('lvl').onclick = () => openModal('progress');
-addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); $('adddlg').style.display = 'none'; setMode(null); } });
+$('modalClose').onclick = closeModal;
+$('btnShelf').onclick = () => { if (!shelfOpen && modalName) closeModal(); setShelf(!shelfOpen); };
+$('btnProgress').onclick = () => toggleModal('progress'); $('btnQuests').onclick = () => toggleModal('quests'); $('btnShop').onclick = () => toggleModal('shop'); $('btnSync').onclick = () => toggleModal('sync'); $('lvl').onclick = () => openModal('progress');
+addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); setShelf(false); $('adddlg').style.display = 'none'; setMode(null); } });
 
 // ---------- settings panel ----------
+// Sections you open stay open, and editing a value updates its row in place instead of rebuilding the panel.
+const settingsOpen = new Set();
 function buildSettings() {
   const body = $('sbody'); body.innerHTML = '';
   for (const [g, name] of GROUPS) {
-    const d = document.createElement('details'); d.dataset.group = g; const s = document.createElement('summary'); s.textContent = name; d.appendChild(s);
+    const d = document.createElement('details'); d.dataset.group = g; d.open = settingsOpen.has(g);
+    d.addEventListener('toggle', () => { if (d.open) settingsOpen.add(g); else settingsOpen.delete(g); });
+    const s = document.createElement('summary'); s.textContent = name; d.appendChild(s);
     for (const def of SETTINGS.filter((x) => x.group === g)) {
       const row = document.createElement('div'); row.className = 'row' + (cfg.isModified(def.key) ? ' mod' : ''); row.dataset.text = (def.label + ' ' + def.help + ' ' + def.key).toLowerCase();
       const v = cfg.get(def.key); let input;
@@ -501,9 +600,11 @@ function buildSettings() {
       else if (def.type === 'select') { input = document.createElement('select'); def.options.forEach((o) => { const op = document.createElement('option'); op.value = op.textContent = o; input.appendChild(op); }); input.value = v; }
       else if (def.type === 'color') { input = document.createElement('input'); input.type = 'color'; input.value = v; }
       else { input = document.createElement('input'); input.type = def.type === 'number' ? 'number' : 'text'; input.value = v; if (def.type === 'number') { if (def.min != null) input.min = def.min; if (def.max != null) input.max = def.max; input.step = def.step ?? (Number.isInteger(def.default) ? 1 : 0.01); } }
-      input.addEventListener('change', () => { cfg.set(def.key, def.type === 'boolean' ? input.checked : input.value); onSettingsChanged(def.group); buildSettings(); });
       const lab = document.createElement('div'); lab.innerHTML = `<label>${esc(def.label)}</label><small>${esc(def.help)} <code>${esc(def.key)}</code></small>`;
-      const rs = document.createElement('button'); rs.textContent = '↺'; rs.title = 'Reset to default'; rs.style.padding = '0'; rs.style.visibility = cfg.isModified(def.key) ? 'visible' : 'hidden'; rs.onclick = () => { cfg.reset(def.key); onSettingsChanged(def.group); buildSettings(); };
+      const rs = document.createElement('button'); rs.textContent = '↺'; rs.title = 'Reset to default'; rs.style.padding = '0'; rs.style.visibility = cfg.isModified(def.key) ? 'visible' : 'hidden';
+      const refresh = () => { const nv = cfg.get(def.key); if (def.type === 'boolean') input.checked = nv; else input.value = nv; row.classList.toggle('mod', cfg.isModified(def.key)); rs.style.visibility = cfg.isModified(def.key) ? 'visible' : 'hidden'; };
+      input.addEventListener('change', () => { cfg.set(def.key, def.type === 'boolean' ? input.checked : input.value); refresh(); onSettingsChanged(def.group); });
+      rs.onclick = () => { cfg.reset(def.key); refresh(); onSettingsChanged(def.group); };
       row.append(lab, input, rs); d.appendChild(row);
     }
     body.appendChild(d);
@@ -511,15 +612,15 @@ function buildSettings() {
   applyFilter();
 }
 function applyFilter() { const q = $('sfilter').value.toLowerCase(); document.querySelectorAll('#sbody .row').forEach((r) => { r.style.display = !q || r.dataset.text.includes(q) ? '' : 'none'; }); document.querySelectorAll('#sbody details').forEach((d) => { if (q) d.open = true; }); }
-let t0; function onSettingsChanged(group) { clearTimeout(t0); t0 = setTimeout(() => { buildLegend(); recompute(['layout', 'genres', 'routing', 'views'].includes(group)); showPanel(); }, 150); }
+let t0; function onSettingsChanged(group) { clearTimeout(t0); t0 = setTimeout(() => { buildLegend(); if (group === 'rating') { buildBar(); const id = selectedId(); setBarFill(id && byId[id]?.heard ? byId[id].rating : 0); } recompute(['layout', 'genres', 'routing', 'views'].includes(group)); showPanel(); }, 150); }
 $('sfilter').addEventListener('input', applyFilter);
-$('btnSettings').onclick = () => { const s = $('settings'); s.style.display = s.style.display === 'flex' ? 'none' : 'flex'; if (s.style.display === 'flex') buildSettings(); };
+$('btnSettings').onclick = () => { const s = $('settings'); s.style.display = s.style.display === 'flex' ? 'none' : 'flex'; if (s.style.display === 'flex') buildSettings(); markNav(); };
 $('sexport').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([cfg.exportJSON()], { type: 'application/json' })); a.download = 'strata-settings.json'; a.click(); };
-$('simport').onclick = () => { const i = document.createElement('input'); i.type = 'file'; i.accept = '.json'; i.onchange = async () => { cfg.importJSON(await i.files[0].text()); buildSettings(); buildLegend(); recompute(true); }; i.click(); };
-$('sreset').onclick = () => { if (!cfg.get('persist.confirmReset') || confirm('Reset all settings to defaults?')) { cfg.reset(); buildSettings(); buildLegend(); recompute(true); } };
+$('simport').onclick = () => { const i = document.createElement('input'); i.type = 'file'; i.accept = '.json'; i.onchange = async () => { cfg.importJSON(await i.files[0].text()); buildSettings(); buildLegend(); buildBar(); recompute(true); }; i.click(); };
+$('sreset').onclick = () => { if (!cfg.get('persist.confirmReset') || confirm('Reset all settings to defaults?')) { cfg.reset(); buildSettings(); buildLegend(); buildBar(); recompute(true); } };
 setInterval(save, cfg.get('persist.autosaveSeconds') * 1000);
 addEventListener('beforeunload', save);
 
 // ---------- start ----------
 vw.x = innerWidth / 2 - 300; vw.y = innerHeight / 2;
-buildLegend(); resize(); recompute(true); save();
+buildLegend(); resize(); recompute(true); save(); markNav();

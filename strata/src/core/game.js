@@ -8,22 +8,24 @@ import { extendThreads, startThread, threadList } from './threads.js';
 import { territoryDays } from './recency.js';
 import { tasteSignature, territoryReveal, levelTitle } from './stats.js';
 import { familiesFromTags, tierFromListeners, makeWorkId, autoLink } from './library.js';
+import { bundleId, activeBundles, collapseBundles, remapEdges } from './bundles.js';
 import * as Sync from './sync.js';
 import * as Q from './quests.js';
 import * as Shop from './shop.js';
 
 const DAY = 864e5;
 
-export function freshState(baseWorks, cfg, now) {
+// demo = true puts the starter catalogue on the map. false is a blank canvas (the starter works can be switched on later with setDemo).
+export function freshState(baseWorks, cfg, now, demo = true) {
   const works = {};
-  for (const w of baseWorks) { const t = w.heard ? now - w.daysAgo * DAY : 0; works[w.id] = { heard: !!w.heard, rating: w.heard ? w.rating : 0, last: t, first: t, ratedAt: t }; }
+  if (demo) for (const w of baseWorks) { const t = w.heard ? now - w.daysAgo * DAY : 0; works[w.id] = { heard: !!w.heard, rating: w.heard ? w.rating : 0, last: t, first: t, ratedAt: t }; }
   return {
-    v: 2, xp: 0, points: cfg.get('shop.startPoints'), rested: 0, lastActive: now, works, added: [], addedEdges: [],
+    v: 2, demo, xp: 0, points: cfg.get('shop.startPoints'), rested: 0, lastActive: now, works, added: [], addedEdges: [], bundles: [],
     threads: [], threadSeq: 0, activeThread: null, longestChain: 0,
     scouted: [], flares: [], dowse: null, via: {}, revealed: {}, charters: { family: {}, sub: {} },
     chronicles: {}, quests: {}, foundations: {},
     unlocks: {}, charges: { lens: cfg.get('shop.startLensCharges'), flare: 0, dowse: 0, roll: 0 }, slotTokens: 0, slotsLost: 0, lastBigUnlock: 0,
-    placed: baseWorks.filter((w) => w.heard).map((w) => w.id), creditLookups: 0, dayXp: { day: 0, xp: 0 }, stats: { ratings: 0, surprises: 0 },
+    placed: demo ? baseWorks.filter((w) => w.heard).map((w) => w.id) : [], creditLookups: 0, dayXp: { day: 0, xp: 0 }, stats: { ratings: 0, surprises: 0 },
     ...Sync.syncDefaults()
   };
 }
@@ -32,7 +34,9 @@ export function createGame({ base, cfg, state = null, now = () => Date.now(), ra
   const t0 = now();
   let S = state || freshState(base.works, cfg, t0);
   const g = { get state() { return S; } };
-  const allBase = () => [...base.works, ...S.added];
+  const demoOn = () => S.demo !== false;
+  const bundles = () => (S.bundles ||= []);
+  const allBase = () => [...(demoOn() ? base.works : []), ...S.added];
   // Base facts, then verified facts laid over them (see core/sync.js overlayWork). Two passes: the first finds verified genres,
   // the second labels each work with the subgenres those genres became.
   let derived = [];
@@ -45,10 +49,13 @@ export function createGame({ base, cfg, state = null, now = () => Date.now(), ra
   };
   const hide = () => cfg.get('sync.unverifiedSeed') === 'hide';
   g.pendingWorks = () => resolved().filter((w) => w.pending);
-  g.works = () => resolved().filter((w) => !w.pending && !(hide() && w.source === 'seed' && !w.verified && !w.heard && !S.scouted.includes(w.id)));
-  g.edges = () => [...(hide() ? [] : base.edges), ...S.addedEdges, ...S.syncEdges];
-  g.subgenres = () => { g.works(); return [...(hide() ? [] : base.subgenres), ...derived]; };
-  const chron = () => { const ids = new Set(g.works().map((w) => w.id)); return base.chronicles.filter((c) => c.works.every((id) => ids.has(id))); };
+  // every work with bundles left unfolded: what sync, chronicles and duplicate checks need
+  g.allWorks = () => resolved().filter((w) => !w.pending && !(hide() && w.source === 'seed' && !w.verified && !w.heard && !S.scouted.includes(w.id)));
+  // what the map shows: bundled works appear as one
+  g.works = () => collapseBundles(g.allWorks(), bundles(), S, now());
+  g.edges = () => remapEdges([...(hide() || !demoOn() ? [] : base.edges), ...S.addedEdges, ...S.syncEdges], activeBundles(g.allWorks(), bundles()));
+  g.subgenres = () => { g.works(); return [...(hide() || !demoOn() ? [] : base.subgenres), ...derived]; };
+  const chron = () => { const ids = new Set(g.allWorks().map((w) => w.id)); return base.chronicles.filter((c) => c.works.every((id) => ids.has(id))); };
   g.chronicles = chron;
   const edges = () => g.edges();
 
@@ -59,7 +66,7 @@ export function createGame({ base, cfg, state = null, now = () => Date.now(), ra
   g.sim = () => makeSimilarity(edges(), cfg);
   g.predicted = (id) => { const ws = g.works(), w = ws.find((x) => x.id === id); return w ? predictRating(w, ws.filter((x) => x.heard), g.sim(), cfg) : null; };
   g.level = () => levelTitle(S.xp, cfg);
-  g.syncChronicles = () => Q.syncChronicles(S, chron(), g.works(), now());
+  g.syncChronicles = () => Q.syncChronicles(S, chron(), g.allWorks(), now());
   g.syncChronicles();
 
   // Opening or playing a work counts as engagement and refreshes its recency ring.
@@ -178,7 +185,7 @@ export function createGame({ base, cfg, state = null, now = () => Date.now(), ra
 
   // ---- library: add a work the user has heard (or wants to). def: {title, artist, year, tags?, fam?, tier?, have?, mbid?, rating?, heard?}
   g.addWork = (def) => {
-    const ws = g.works(), key = (a, b) => (a + '|' + b).toLowerCase();
+    const ws = g.allWorks(), key = (a, b) => (a + '|' + b).toLowerCase();
     const dup = ws.find((w) => key(w.artist, w.title) === key(def.artist, def.title)); if (dup) return { ok: false, reason: 'Already in your library.', id: dup.id };
     const fam = def.fam || familiesFromTags(def.tags, cfg); if (!fam) return { ok: false, reason: 'Pick a genre family.' };
     const id = makeWorkId(def.title, def.artist, new Set(ws.map((w) => w.id)));
@@ -189,6 +196,61 @@ export function createGame({ base, cfg, state = null, now = () => Date.now(), ra
     S.scouted.push(id); return { ok: true, id, links: links.length };
   };
 
+  // Take a work you added or imported out of the library, with everything that points at it. Starter works are not removable:
+  // they go away together when the demo catalogue is switched off.
+  g.removeWork = (id) => {
+    if (bundles().some((b) => b.id === id)) return g.unbundle(id);
+    if (!S.added.some((x) => x.id === id)) return { ok: false, reason: 'Only works you added or imported can be removed. The starter works go away with the demo switch.' };
+    S.added = S.added.filter((x) => x.id !== id);
+    for (const k of ['works', 'facts', 'imports', 'via', 'revealed']) delete S[k][id];
+    S.placed = S.placed.filter((x) => x !== id); S.scouted = S.scouted.filter((x) => x !== id);
+    S.addedEdges = S.addedEdges.filter((e) => e.a !== id && e.b !== id); S.syncEdges = S.syncEdges.filter((e) => e.a !== id && e.b !== id);
+    S.threads = S.threads.map((t) => ({ ...t, ids: t.ids.filter((x) => x !== id) })).filter((t) => t.ids.length > 0);
+    if (!S.threads.some((t) => t.id === S.activeThread)) S.activeThread = null;
+    if (S.dowse && S.dowse.id === id) S.dowse = null;
+    S.bundles = bundles().map((b) => ({ ...b, ids: b.ids.filter((x) => x !== id) })).filter((b) => { if (b.ids.length >= 2) return true; delete S.works[b.id]; return false; });
+    g.afterSync(); return { ok: true };
+  };
+  g.removeMany = (ids) => { let n = 0, reason = null; for (const id of ids) { const r = g.removeWork(id); if (r.ok) n++; else reason = r.reason; } return { ok: n > 0, removed: n, reason }; };
+
+  // The starter catalogue on or off. Turning it off only hides it: ratings you gave starter works are kept for next time.
+  g.setDemo = (on) => {
+    S.demo = !!on;
+    if (S.demo) {
+      const t = now();
+      for (const w of base.works) if (!S.works[w.id]) {
+        const tt = w.heard ? t - w.daysAgo * DAY : 0;
+        S.works[w.id] = { heard: !!w.heard, rating: w.heard ? w.rating : 0, last: tt, first: tt, ratedAt: tt };
+        if (w.heard && !S.placed.includes(w.id)) S.placed.push(w.id);
+      }
+    }
+    g.afterSync(); return { ok: true, on: S.demo };
+  };
+  g.demo = () => demoOn();
+
+  // ---- bundles: treat several works as one. The parts stay in the save; unbundling gives them back.
+  g.bundles = () => activeBundles(g.allWorks(), bundles()).map((b) => ({ id: b.id, name: b.name, ids: b.present }));
+  g.makeBundle = (ids, name) => {
+    ids = [...new Set(ids || [])]; name = String(name || '').trim();
+    if (ids.length < 2) return { ok: false, reason: 'Pick at least two works to bundle. Shift-click works on the map to select several.' };
+    if (!name) return { ok: false, reason: 'Give the bundle a name.' };
+    const have = new Set(g.allWorks().map((w) => w.id)), inBundle = new Set(bundles().flatMap((b) => b.ids));
+    for (const id of ids) {
+      if (id.startsWith('b:')) return { ok: false, reason: 'A bundle cannot go inside another bundle. Unbundle it first.' };
+      if (!have.has(id)) return { ok: false, reason: 'One of those works is not on the map.' };
+      if (inBundle.has(id)) return { ok: false, reason: 'One of those works is already in a bundle.' };
+    }
+    const id = bundleId(name, new Set([...bundles().map((b) => b.id), ...have]));
+    bundles().push({ id, name, ids });
+    return { ok: true, id };
+  };
+  g.unbundle = (id) => {
+    if (!bundles().some((b) => b.id === id)) return { ok: false, reason: 'That is not a bundle.' };
+    S.bundles = bundles().filter((b) => b.id !== id); delete S.works[id];
+    S.scouted = S.scouted.filter((x) => x !== id); S.placed = S.placed.filter((x) => x !== id);
+    return { ok: true };
+  };
+
   // ---- sync: imports and verified facts. Imports never award XP; only rating does.
   g.importRecords = (records, provider, opts = {}) => {
     const all = allBase().map((w) => ({ id: w.id, title: w.title, artist: w.artist, mbid: w.mbid }));
@@ -196,13 +258,13 @@ export function createGame({ base, cfg, state = null, now = () => Date.now(), ra
     Sync.logRun(S, { at: now(), provider, fetched: records.length, added: res.added.length, matched: res.matched.length, skipped: res.skipped });
     g.afterSync(); return res;
   };
-  g.afterSync = () => { const r = Sync.buildSyncEdges(S, g.works(), cfg); g.syncChronicles(); return r; };
+  g.afterSync = () => { const r = Sync.buildSyncEdges(S, g.allWorks(), cfg); g.syncChronicles(); return r; };
   g.setFamilies = (id, fam) => {
     const w = S.added.find((x) => x.id === id); if (!w) return { ok: false, reason: 'Only added works can be classified by hand.' };
     if (!fam || !Object.keys(fam).length) return { ok: false, reason: 'Pick at least one family.' };
     w.fam = fam; w.famPinned = true; g.afterSync(); return { ok: true };
   };
-  g.syncSummary = () => Sync.syncSummary(S, g.works());
+  g.syncSummary = () => Sync.syncSummary(S, g.allWorks());
   g.provenance = (id) => { const w = g.works().find((x) => x.id === id), f = S.facts[id]; return { id, source: w?.source || null, verified: !!w?.verified, at: f?.at || null, steps: f ? Object.keys(f.steps) : [], imports: Object.keys(S.imports[id]?.sources || {}), unmatched: !!f?.unmatched }; };
 
   g.place = (id) => Shop.place(S, id, cfg);
@@ -213,7 +275,8 @@ export function createGame({ base, cfg, state = null, now = () => Date.now(), ra
   // ---- visibility and stats
   g.visibility = (hexPos, lattice) => {
     const ws = g.works(), v = computeVisibility(ws, hexPos, lattice, cfg, { scouted: S.scouted, flares: S.flares, charters: S.charters });
-    if (cfg.get('slots.enabled')) for (const w of ws) if (w.heard && !S.placed.includes(w.id)) v.visible.delete(w.id);
+    const placed = (w) => S.placed.includes(w.id) || (w.bundleOf || []).some((i) => S.placed.includes(i));
+    if (cfg.get('slots.enabled')) for (const w of ws) if (w.heard && !placed(w)) v.visible.delete(w.id);
     return v;
   };
   g.taste = () => ({ now: tasteSignature(g.works(), cfg), before: tasteSignature(g.works(), cfg, now() - cfg.get('taste.compareDays') * DAY) });

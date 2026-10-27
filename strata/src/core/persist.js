@@ -1,10 +1,11 @@
 // Saving: versioned state, rolling backups, JSON export/import, and migration from the first prototype's save. Pure: storage is passed in.
 export const STATE_KEY = 'strata.state.v2', OLD_KEY = 'strata.state.v1', BACKUP_KEY = 'strata.backup.';
 
+// Saves from before the demo switch existed all had the starter catalogue, so they load with the demo on.
 export function migrate(raw) {
   if (!raw || typeof raw !== 'object') return null;
-  if (raw.v === 2) return raw;
-  if (raw.works && typeof raw.xp === 'number') return { ...raw, v: 2, migratedFrom: 1 }; // v1 had xp, points, chain, works
+  if (raw.v === 2) return raw.demo === undefined ? { ...raw, demo: true } : raw;
+  if (raw.works && typeof raw.xp === 'number') return { ...raw, v: 2, migratedFrom: 1, demo: true }; // v1 had xp, points, chain, works
   return null;
 }
 
@@ -14,7 +15,7 @@ export function withDefaults(s, base) {
   for (const k of ['unlocks', 'charges', 'chronicles', 'quests', 'foundations', 'via', 'revealed', 'charters', 'facts', 'artists', 'places', 'wd', 'imports']) out[k] = { ...base[k], ...(s?.[k] || {}) };
   out.sync = { ...base.sync, ...(s?.sync || {}) }; out.sync.runs = Array.isArray(out.sync.runs) ? out.sync.runs : []; out.sync.failures = out.sync.failures || {};
   out.charters = { family: {}, sub: {}, ...(s?.charters || {}) };
-  for (const k of ['threads', 'scouted', 'flares', 'placed', 'added', 'addedEdges', 'syncEdges']) out[k] = Array.isArray(s?.[k]) ? s[k] : base[k];
+  for (const k of ['threads', 'scouted', 'flares', 'placed', 'added', 'addedEdges', 'syncEdges', 'bundles']) out[k] = Array.isArray(s?.[k]) ? s[k] : base[k] || [];
   out.works = { ...base.works, ...(s?.works || {}) };
   return out;
 }
