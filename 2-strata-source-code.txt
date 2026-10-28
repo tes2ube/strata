@@ -1,0 +1,2860 @@
+﻿
+`Strata source code. Each file starts with a line '=== FILE: path ==='. To change a file, output the whole updated file with that same path.`
+
+`=== FILE: package.json ===`
+
+`{`
+
+`"name": "strata",`
+
+`"version": "0.1.0",`
+
+`"description": "Music discovery tree (working title). Zero-dependency prototype: ES modules + Canvas2D.",`
+
+`"type": "module",`
+
+`"scripts": {`
+
+`"test": "node --test \"test/*.test.js\"",`
+
+`"serve": "python3 -m http.server 5173",`
+
+`"docs": "node tools/gen-settings-doc.js && node tools/gen-wheel.js"`
+
+`}`
+
+`}`
+
+`=== FILE: index.html ===`
+
+`<!doctype html>`
+
+`<html lang="en">`
+
+`<head>`
+
+`<meta charset="utf-8">`
+
+`<meta name="viewport" content="width=device-width, initial-scale=1">`
+
+`<title>Strata (working title)</title>`
+
+`<style>`
+
+`:root { --bg:#0B0E12; --panel:#12171D; --line:#252D37; --text:#E8E4DA; --muted:#9AA3AE; --accent:#F2B84B; }`
+
+`* { box-sizing:border-box; }`
+
+`html, body { margin:0; height:100%; background:var(--bg); color:var(--text); font:13px/1.4 system-ui, sans-serif; overflow:hidden; }`
+
+`canvas#map { position:absolute; inset:0; width:100%; height:100%; display:block; }`
+
+`header { position:absolute; left:0; right:0; top:0; height:48px; display:flex; align-items:center; gap:12px; padding:0 16px; background:rgba(11,14,18,.92); border-bottom:1px solid var(--line); z-index:5; }`
+
+`header b { font-size:18px; } header .sp { flex:1; }`
+
+`button, select, input { font:inherit; color:inherit; }`
+
+`button { background:transparent; border:1px solid #3A4452; border-radius:8px; padding:6px 12px; cursor:pointer; min-height:32px; }`
+
+`button:hover { border-color:#8A95A1; }`
+
+`aside { position:absolute; background:rgba(18,23,29,.96); border:1px solid var(--line); border-radius:14px; z-index:4; }`
+
+`#legend { left:16px; top:64px; width:230px; padding:14px; display:flex; flex-direction:column; gap:8px; }`
+
+`#legend h3, #panel h3 { margin:0; font:500 11px ui-monospace, monospace; letter-spacing:.08em; color:var(--muted); }`
+
+`#legend label { display:flex; align-items:center; gap:8px; cursor:pointer; min-height:24px; }`
+
+`#legend .sw { width:26px; height:0; border-top:3px solid; }`
+
+`#panel { right:16px; top:64px; bottom:16px; width:380px; padding:18px 18px 18px 40px; overflow:auto; display:none; }`
+
+`#ratingbar { position:absolute; left:14px; top:18px; bottom:18px; width:14px; border-radius:7px; background:#222A33; cursor:pointer; }`
+
+`#ratingfill { position:absolute; left:0; right:0; bottom:0; border-radius:7px; background:var(--accent); }`
+
+`#ratinghover { position:absolute; left:-2px; right:-2px; height:2px; background:#fff; display:none; }`
+
+`#ratingtip { position:fixed; display:none; padding:4px 10px; background:#1A2129; border:1px solid #3A4452; border-radius:12px; font-weight:700; pointer-events:none; z-index:20; }`
+
+`#panel h2 { margin:0 0 2px; font-size:22px; } .muted { color:var(--muted); }`
+
+`.chip { display:inline-block; padding:2px 9px; border:1px solid #3A4452; border-radius:11px; margin:2px 4px 2px 0; font-size:11px; }`
+
+`#settings { position:fixed; inset:48px 0 0 auto; width:min(560px,100%); background:var(--panel); border-left:1px solid var(--line); z-index:9; display:none; flex-direction:column; }`
+
+`#settings .bar { padding:10px 14px; display:flex; gap:8px; border-bottom:1px solid var(--line); } #settings .bar input[type=search] { flex:1; background:#0B0E12; border:1px solid #3A4452; border-radius:8px; padding:6px 10px; }`
+
+`#settings .body { overflow:auto; padding:6px 14px 40px; }`
+
+`#settings details { border-bottom:1px solid var(--line); padding:6px 0; } #settings summary { cursor:pointer; font-weight:700; padding:6px 0; }`
+
+`.row { display:grid; grid-template-columns:1fr 150px 24px; gap:8px; align-items:center; padding:4px 0; } .row small { display:block; color:var(--muted); }`
+
+`.row input[type=number], .row input[type=text], .row select { width:100%; background:#0B0E12; border:1px solid #3A4452; border-radius:6px; padding:4px 6px; }`
+
+`.row.mod label { color:var(--accent); }`
+
+`#hud { position:absolute; left:16px; bottom:16px; z-index:4; padding:8px 12px; background:rgba(18,23,29,.96); border:1px solid var(--line); border-radius:12px; color:var(--muted); font:11px ui-monospace, monospace; }`
+
+`</style>`
+
+`</head>`
+
+`<body>`
+
+`<canvas id="map"></canvas>`
+
+`<header><b>Strata</b><span class="muted">working title</span><span class="sp"></span><span id="xp" class="muted"></span><button id="btnReset">Reset progress</button><button id="btnSettings">Settings</button></header>`
+
+`<aside id="legend"></aside>`
+
+`<aside id="panel"><div id="ratingbar"><div id="ratingfill"></div><div id="ratinghover"></div></div><div id="panelbody"></div></aside>`
+
+`<div id="ratingtip"></div>`
+
+`<div id="settings"><div class="bar"><input type="search" id="sfilter" placeholder="Filter settings"><button id="sexport">Export</button><button id="simport">Import</button><button id="sreset">Reset all</button></div><div class="body" id="sbody"></div></div>`
+
+`<div id="hud"></div>`
+
+`<script type="module" src="src/render/app.js"></script>`
+
+`</body>`
+
+`</html>`
+
+`=== FILE: src/settings/definitions.js ===`
+
+`// Every tunable number, color, toggle and name in the app lives here.`
+
+`// The settings panel is generated from this list, so adding an entry here adds a control.`
+
+`// Keys are flat dotted strings. Tier ids, family ids and relation ids appear inside keys.`
+
+`export const TIER_IDS = ['mainstream', 'essential', 'cult', 'niche', 'deepcut', 'ghost'];`
+
+`export const FAMILY_IDS = ['hiphop', 'funksoul', 'pop', 'rock', 'electronic', 'ambient', 'jazz'];`
+
+`export const RELATION_TYPES = ['precedent', 'inspired', 'contemporary', 'personnel', 'sample', 'other'];`
+
+`export const BADGE_IDS = ['canon', 'landmark', 'underground', 'gateway', 'deepend', 'origin', 'crossover', 'wellspring', 'rediscovered'];`
+
+`export const GROUPS = [`
+
+`['xp', 'XP and points'], ['tiers', 'Rarity tiers (rings)'], ['badges', 'Badges'], ['fog', 'Fog of war'],`
+
+`['genres', 'Genre families and colors'], ['recency', 'Recency and time'], ['rating', 'Rating bar'],`
+
+`['layout', 'Layout and hex grid'], ['routing', 'Connection lines'], ['spotlight', 'Hover and selection'],`
+
+`['slots', 'Map slots'], ['quests', 'Quests and chronicles'], ['shop', 'Unlocks and consumables'],`
+
+`['recs', 'Recommendations'], ['data', 'Data sources'], ['ui', 'Interface'], ['persist', 'Saving']`
+
+`];`
+
+`const S = [];`
+
+`function def(group, key, label, help, type, value, extra = {}) {`
+
+``S.push({ group, key: `${group}.${key}`, label, help, type, default: value, ...extra });``
+
+`}`
+
+`const num = (g, k, l, h, v, e = {}) => def(g, k, l, h, 'number', v, e);`
+
+`const bool = (g, k, l, h, v) => def(g, k, l, h, 'boolean', v);`
+
+`const color = (g, k, l, h, v) => def(g, k, l, h, 'color', v);`
+
+`const text = (g, k, l, h, v) => def(g, k, l, h, 'text', v);`
+
+`const pick = (g, k, l, h, v, options) => def(g, k, l, h, 'select', v, { options });`
+
+`// ---------------- XP and points ----------------`
+
+`num('xp', 'rateBase', 'XP per rating', 'Base XP awarded each time you rate a work you have not rated before.', 20, { min: 0, max: 500 });`
+
+`num('xp', 'reRateBase', 'XP per re-rating', 'XP for re-rating a work after the re-listen delay. 0 disables.', 8, { min: 0, max: 500 });`
+
+`num('xp', 'reRateDelayDays', 'Re-listen delay (days)', 'Days before a re-rating earns XP.', 60, { min: 1, max: 3650, unit: 'days' });`
+
+`num('xp', 'lowRatingFloor', 'Low-rating bonus floor', 'Ratings at or below this earn the low-rating honesty bonus.', 4, { min: 0, max: 10 });`
+
+`num('xp', 'lowRatingBonus', 'Low-rating bonus (x)', 'Multiplier added when you rate at or below the floor (honest low scores teach the model).', 0.25, { min: 0, max: 2, step: 0.05 });`
+
+`num('xp', 'surpriseThreshold', 'Surprise threshold (rating points)', 'How far your rating must differ from the model prediction to count as a surprise.', 2, { min: 0.5, max: 8, step: 0.1 });`
+
+`num('xp', 'surpriseBonus', 'Surprise bonus (x)', 'Multiplier added for a surprise rating.', 0.5, { min: 0, max: 3, step: 0.05 });`
+
+`num('xp', 'leapBase', 'Leap bonus XP', 'Flat XP for the first work you rate in a family you have never rated in.', 40, { min: 0, max: 500 });`
+
+`num('xp', 'leapSubBase', 'Subgenre leap bonus XP', 'Flat XP for the first work in a subgenre you have never rated in.', 15, { min: 0, max: 500 });`
+
+`num('xp', 'chainPerLink', 'Chain bonus per link (x)', 'Multiplier added per consecutive linked work in the same thread.', 0.1, { min: 0, max: 1, step: 0.01 });`
+
+`num('xp', 'chainCap', 'Chain bonus cap (x)', 'Maximum total chain multiplier added. 1 means up to x2.', 1, { min: 0, max: 5, step: 0.05 });`
+
+`num('xp', 'chainMinRating', 'Minimum rating to extend a chain', 'Works rated below this still earn XP but do not extend the chain. 0 = always extend.', 0, { min: 0, max: 10 });`
+
+`num('xp', 'restedPerDay', 'Rested XP stored per day away', 'Bonus XP pool that grows while you are away.', 10, { min: 0, max: 200 });`
+
+`num('xp', 'restedCap', 'Rested XP pool cap', 'Maximum stored rested XP.', 300, { min: 0, max: 5000 });`
+
+`num('xp', 'restedRate', 'Rested spend rate (x)', 'Extra XP per rating as a fraction of base, drawn from the pool.', 1, { min: 0, max: 5, step: 0.1 });`
+
+`num('xp', 'lineageDepthBonus', 'Lineage depth bonus', 'Extra XP per step deep when following precedent chains.', 4, { min: 0, max: 100 });`
+
+`num('xp', 'creditHopBonus', 'Credit-hop bonus', 'Extra XP for rating a work reached by following a credit (producer, player, etc.).', 6, { min: 0, max: 100 });`
+
+`num('xp', 'dailyXpCap', 'Daily XP cap (0 = none)', 'Soft cap on XP per day, if you want to slow things down.', 0, { min: 0, max: 100000 });`
+
+`num('xp', 'levelBase', 'XP for level 2', 'XP needed to go from level 1 to 2.', 200, { min: 10, max: 100000 });`
+
+`num('xp', 'levelGrowth', 'Level growth factor', 'Each level needs this many times the XP of the previous.', 1.35, { min: 1, max: 3, step: 0.01 });`
+
+`num('xp', 'pointsPerXp', 'Points per XP', 'Spendable points earned per XP gained. 0.5 = one point per two XP.', 0.5, { min: 0, max: 10, step: 0.05 });`
+
+`num('xp', 'questPointsMult', 'Quest points multiplier (x)', 'Multiplier applied to all quest point rewards.', 1, { min: 0, max: 10, step: 0.1 });`
+
+`bool('xp', 'respecFree', 'Respec is free', 'Moving or removing spec choices never costs points.', true);`
+
+`// ---------------- Rarity tiers ----------------`
+
+`const tierDefaults = {`
+
+`mainstream: ['Mainstream', '#F2EFE8', 1.0, 10, 0, 0, 0.6],`
+
+`essential: ['Essential', '#5ED17B', 1.1, 14, 25, 3, 0.8],`
+
+`cult: ['Cult', '#4EA8FF', 1.25, 20, 80, 3, 1.0],`
+
+`niche: ['Niche', '#B07CFF', 1.5, 30, 300, 3, 1.2],`
+
+`deepcut: ['Deep cut', '#FF9B3D', 1.9, 45, 900, 3, 1.6],`
+
+`ghost: ['Ghost', '#8CF3E6', 2.5, 70, 2500, 3, 2.0]`
+
+`};`
+
+`for (const id of TIER_IDS) {`
+
+`const [name, col, xm, mv, um, pre, fr] = tierDefaults[id];`
+
+``text('tiers', `${id}.name`, `${name}: name`, 'Display name of this tier.', name);``
+
+``color('tiers', `${id}.color`, `${name}: ring color`, 'Color of the ring around works of this tier.', col);``
+
+``num('tiers', `${id}.xpMult`, `${name}: XP multiplier`, 'Multiplier on rating XP for works of this tier.', xm, { min: 0, max: 20, step: 0.05 });``
+
+``num('tiers', `${id}.masteryValue`, `${name}: mastery value`, 'How much one heard work of this tier adds to its genre mastery (before rating factor and diminishing returns).', mv, { min: 0, max: 1000 });``
+
+``num('tiers', `${id}.unlockMastery`, `${name}: mastery to unlock`, 'Genre mastery needed before this tier can appear in that genre.', um, { min: 0, max: 100000 });``
+
+``num('tiers', `${id}.prereqWorks`, `${name}: works needed from tier below`, 'Heard works required in the previous tier (or any rarer tier) of that genre before this tier unlocks. Stops you skipping the canon.', pre, { min: 0, max: 50 });``
+
+``num('tiers', `${id}.fogRadiusBonus`, `${name}: fog reach bonus (hex steps)`, 'Extra hex steps a heard work of this tier pushes the fog back, scaled by genre depth.', fr, { min: 0, max: 10, step: 0.1 });``
+
+`}`
+
+`num('tiers', 'diminishing', 'Diminishing returns exponent', 'Works per tier count as n^exponent toward mastery. Lower = a pile of one tier helps less.', 0.75, { min: 0.3, max: 1, step: 0.01 });`
+
+`num('tiers', 'ratingFloor', 'Rating that counts for nothing', 'At or below this rating a heard work adds no mastery.', 4, { min: 0, max: 10, step: 0.1 });`
+
+`num('tiers', 'ratingCeil', 'Rating that counts fully', 'At or above this rating a heard work adds its full mastery value (times the top factor).', 8, { min: 0, max: 10, step: 0.1 });`
+
+`num('tiers', 'ratingTopFactor', 'Top rating factor', 'Mastery multiplier at or above the full-credit rating.', 1.15, { min: 0.5, max: 3, step: 0.05 });`
+
+`num('tiers', 'ringWidth', 'Ring width (px)', 'Thickness of the rarity ring.', 4, { min: 1, max: 12 });`
+
+`num('tiers', 'ringGap', 'Ring gap (px)', 'Gap between art and ring.', 1, { min: 0, max: 8 });`
+
+`// ---------------- Badges ----------------`
+
+`const badgeDefaults = {`
+
+`canon: ['Canon', 'Cornerstone of a genre. Counts toward Foundations and mastery.', 1.5, 1.5],`
+
+`landmark: ['Landmark', 'Changed history. Anchors chronicles and earns chronicle XP.', 1.3, 1.0],`
+
+`underground: ['Underground', 'Scene-level, outside the mainstream. Counts extra toward deep tiers.', 1.2, 1.5],`
+
+`gateway: ['Gateway', 'Easiest way into a genre. Quests reward finishing gateways first.', 1.0, 1.0],`
+
+`deepend: ['Deep end', 'Demanding. Earns extra XP for a rating of 7 or higher.', 1.4, 1.0],`
+
+`origin: ['Origin', 'First of its kind. Counts toward history quests.', 1.2, 1.0],`
+
+`crossover: ['Crossover', 'Bridges two families. Counts toward bridge quests.', 1.2, 1.0],`
+
+`wellspring: ['Wellspring', 'Heavily sampled or covered. Reveals sample connections.', 1.1, 1.0],`
+
+`rediscovered: ['Rediscovered', 'Neglected on release, valued later. Counts toward archaeology quests.', 1.2, 1.0]`
+
+`};`
+
+`for (const id of BADGE_IDS) {`
+
+`const [name, help, xm, mm] = badgeDefaults[id];`
+
+``bool('badges', `${id}.enabled`, `${name}: show badge`, help, true);``
+
+``num('badges', `${id}.xpMult`, `${name}: XP multiplier`, 'Multiplier on rating XP when a work carries this badge.', xm, { min: 0, max: 10, step: 0.05 });``
+
+``num('badges', `${id}.masteryMult`, `${name}: mastery multiplier`, 'Multiplier on mastery contributed by works with this badge.', mm, { min: 0, max: 10, step: 0.05 });``
+
+`}`
+
+`num('badges', 'size', 'Badge icon size (px)', 'Size of the badge icon on a tile.', 16, { min: 8, max: 40 });`
+
+`bool('badges', 'matchRingColor', 'Badge color matches ring', "Badge icons take the color of the work's rarity ring.", true);`
+
+`// ---------------- Fog of war ----------------`
+
+`bool('fog', 'enabled', 'Fog of war enabled', 'Turn off to see every recommendation.', true);`
+
+`num('fog', 'baseSteps', 'Base reveal radius (hex steps)', 'Reach of any heard work before genre depth is applied.', 1.5, { min: 0, max: 10, step: 0.1 });`
+
+`num('fog', 'depthReference', 'Depth reference mastery', 'Genre mastery at which depth factor reaches 1.0 (full reach bonus).', 1200, { min: 1, max: 100000 });`
+
+`num('fog', 'tierAhead', 'Tiers ahead a work can reveal', 'A work of tier t can reveal works up to tier t + this, limited by genre unlocks.', 2, { min: 0, max: 5 });`
+
+`num('fog', 'scoutSteps', 'Scouted radius (hex steps)', 'Small reveal around an unheard work you have scouted.', 0.8, { min: 0, max: 5, step: 0.1 });`
+
+`num('fog', 'maxVisiblePerHeard', 'Max new works revealed per heard work', 'Stops one popular album revealing everything nearby. 0 = unlimited.', 6, { min: 0, max: 100 });`
+
+`num('fog', 'softness', 'Edge softness (px)', 'Blur on the edge of revealed areas.', 28, { min: 0, max: 100 });`
+
+`num('fog', 'opacity', 'Fog opacity', 'How dark unexplored areas are.', 0.9, { min: 0, max: 1, step: 0.01 });`
+
+`color('fog', 'color', 'Fog color', 'Color of the fog.', '#070A0E');`
+
+`bool('fog', 'showSilhouettes', 'Show silhouettes in fog', 'Faint "?" tiles inside fog suggest something is there.', true);`
+
+`bool('fog', 'perSubgenre', 'Depth per subgenre (experimental)', 'Compute depth per subgenre as well as family.', false);`
+
+`num('fog', 'parentShare', 'Parent share of subgenre mastery', "Fraction of a subgenre's mastery that also counts toward its parent family.", 0.5, { min: 0, max: 1, step: 0.05 });`
+
+`// ---------------- Genre families ----------------`
+
+`const famDefaults = {`
+
+`hiphop: ['Hip Hop', 20], funksoul: ['Funk / Soul', 48], pop: ['Pop', 100], rock: ['Rock / Indie', 165],`
+
+`electronic: ['Electronic', 215], ambient: ['Ambient / Score', 265], jazz: ['Jazz', 315]`
+
+`};`
+
+`for (const id of FAMILY_IDS) {`
+
+``text('genres', `${id}.name`, `${famDefaults[id][0]}: name`, 'Display name.', famDefaults[id][0]);``
+
+``num('genres', `${id}.hue`, `${famDefaults[id][0]}: hue (0-360)`, 'Color hue of this family. Neighbors blend where they meet.', famDefaults[id][1], { min: 0, max: 360 });``
+
+`}`
+
+`num('genres', 'saturation', 'Territory saturation (%)', 'Saturation of territory tints and tile colors.', 70, { min: 0, max: 100 });`
+
+`num('genres', 'territoryOpacity', 'Territory tint opacity', 'Strength of the colored territory glow.', 0.34, { min: 0, max: 1, step: 0.01 });`
+
+`num('genres', 'territoryRadius', 'Territory radius (px)', 'Size of each territory glow.', 250, { min: 50, max: 800 });`
+
+`num('genres', 'subgenreLightnessStep', 'Subgenre lightness step (%)', 'Lightness shift between a family and each nested subgenre level.', 6, { min: 0, max: 20 });`
+
+`num('genres', 'ringRadius', 'Anchor ring radius (px)', 'Distance of the fixed genre anchors from the center.', 340, { min: 100, max: 1000 });`
+
+`num('genres', 'wellStrength', 'Genre well pull', 'How strongly a family anchor pulls works toward itself.', 0.06, { min: 0, max: 1, step: 0.005 });`
+
+`// ---------------- Recency and time ----------------`
+
+`num('recency', 'fullDays', 'Full ring until (days)', 'Recency ring is full for this many days after you last engaged.', 7, { min: 0, max: 365, unit: 'days' });`
+
+`num('recency', 'halfDays', 'Half ring at (days)', 'Days at which the ring is half full.', 60, { min: 1, max: 3650, unit: 'days' });`
+
+`num('recency', 'emptyDays', 'Minimum ring at (days)', 'Days after which the ring stays at its minimum.', 365, { min: 2, max: 7300, unit: 'days' });`
+
+`num('recency', 'minRing', 'Minimum ring fraction', 'Smallest ring arc shown.', 0.06, { min: 0, max: 0.5, step: 0.01 });`
+
+`pick('recency', 'territoryMode', 'Territory recency uses', 'How a genre\'s "last visited" is computed.', 'latest', ['latest', 'average', 'median']);`
+
+`num('recency', 'masteryDecayDays', 'Mastery decay starts (days, 0 = never)', 'Days of inactivity in a genre before its mastery starts to fade.', 0, { min: 0, max: 7300 });`
+
+`num('recency', 'masteryDecayPerMonth', 'Mastery decay per month (%)', 'Percent of mastery lost per month after decay starts.', 2, { min: 0, max: 50, step: 0.5 });`
+
+`num('recency', 'masteryFloor', 'Mastery decay floor (%)', 'Mastery never decays below this percent of its peak.', 60, { min: 0, max: 100 });`
+
+`bool('recency', 'countOpenAsEngaged', 'Opening a work counts as engagement', 'Selecting a work refreshes its ring even without a new rating.', true);`
+
+`bool('recency', 'countPlayAsEngaged', 'Playing a preview counts as engagement', 'Playing a preview refreshes the ring.', true);`
+
+`// ---------------- Rating bar ----------------`
+
+`num('rating', 'subStep', 'Light/decent/strong step', 'How far light and strong sit from decent on the numeric scale (light 8 = 8 - step).', 0.3, { min: 0.05, max: 0.49, step: 0.01 });`
+
+`num('rating', 'borderBand', 'Border zone width', 'Fraction of each third that counts as the border between two steps.', 0.16, { min: 0, max: 0.6, step: 0.01 });`
+
+`color('rating', 'fillColor', 'Bar fill color', 'Color of the filled rating bar.', '#F2B84B');`
+
+`color('rating', 'hoverColor', 'Bar hover color', 'Color of the hover indicator.', '#FFFFFF');`
+
+`num('rating', 'min', 'Lowest rating', 'Bottom of the scale.', 1, { min: 0, max: 5 });`
+
+`num('rating', 'max', 'Highest rating', 'Top of the scale.', 10, { min: 5, max: 100 });`
+
+`bool('rating', 'showNumeric', 'Show numeric value', 'Show the decimal value next to the label.', false);`
+
+`// ---------------- Layout and hex grid ----------------`
+
+`num('layout', 'spacing', 'Hex spacing (px)', 'Distance between neighboring lattice points. Larger = more room for lines.', 120, { min: 70, max: 300 });`
+
+`num('layout', 'tileSize', 'Tile size (px)', 'Size of an album tile.', 56, { min: 24, max: 120 });`
+
+`num('layout', 'selectedScale', 'Selected tile scale', 'Size multiplier for selected works.', 1.35, { min: 1, max: 3, step: 0.05 });`
+
+`bool('layout', 'showHexDots', 'Show hex dots', 'Show the lattice points works snap to. Visible while designing.', true);`
+
+`num('layout', 'hexDotOpacity', 'Hex dot opacity', 'Opacity of the lattice dots.', 0.35, { min: 0, max: 1, step: 0.01 });`
+
+`bool('layout', 'showLaneGrid', 'Show connection lanes', 'Faintly draw the secondary grid lines run on.', false);`
+
+`num('layout', 'linkRest', 'Link rest length (x spacing)', 'Spring rest length between linked works, in lattice spacings.', 1.0, { min: 0.5, max: 4, step: 0.05 });`
+
+`num('layout', 'relatednessStretch', 'Relatedness stretch', 'Extra rest length for weakly related links: rest = base x (1 + stretch x (1 - similarity)).', 1.5, { min: 0, max: 6, step: 0.1 });`
+
+`num('layout', 'linkStrength', 'Link spring strength', 'Pull of each link.', 0.08, { min: 0, max: 1, step: 0.005 });`
+
+`num('layout', 'repulsion', 'Repulsion', 'How hard works push each other apart.', 1.0, { min: 0, max: 10, step: 0.05 });`
+
+`num('layout', 'repulsionRange', 'Repulsion range (x spacing)', 'Distance within which works repel.', 1.8, { min: 0.5, max: 6, step: 0.1 });`
+
+`num('layout', 'iterations', 'Simulation steps', 'Steps run when the layout updates.', 220, { min: 10, max: 5000 });`
+
+`num('layout', 'cooling', 'Cooling', 'How quickly movement settles (higher = slower).', 0.985, { min: 0.8, max: 0.999, step: 0.001 });`
+
+`num('layout', 'massScale', 'Rating mass scale', "How much a heard work's rating weighs in pulling neighbors.", 0.12, { min: 0, max: 1, step: 0.01 });`
+
+`num('layout', 'hubRadius', 'Center hub radius (px)', 'Reserved area for the shelf hub in the center.', 62, { min: 0, max: 300 });`
+
+`num('layout', 'seed', 'Layout seed', 'Seed for deterministic layout. Change to reshuffle ties.', 7, { min: 0, max: 99999 });`
+
+`bool('layout', 'animate', 'Animate layout changes', 'Smoothly move tiles when the layout changes.', true);`
+
+`num('layout', 'animateMs', 'Layout animation (ms)', 'Duration of tile movement.', 600, { min: 0, max: 3000 });`
+
+`// ---------------- Connection lines ----------------`
+
+`pick('routing', 'mode', 'Routing mode', 'hex = straights run along the three hex axes (0, 60, 120 degrees), in lanes between works.', 'hex', ['hex']);`
+
+`num('routing', 'cornerRadius', 'Corner radius (px)', 'Roundness where a line turns.', 18, { min: 0, max: 60 });`
+
+`bool('routing', 'bundle', 'Bundle shared connections', 'Lines that share a work run together on one trunk and branch off.', true);`
+
+`num('routing', 'portPenalty', 'Shared-port penalty', 'Cost added when unbundled lines share a port; higher spreads them out.', 60, { min: 0, max: 500 });`
+
+`num('routing', 'turnPenalty', 'Turn penalty', 'Cost per turn; higher gives straighter lines.', 10, { min: 0, max: 200 });`
+
+`num('routing', 'backtrackPenalty', 'Backtrack penalty', 'Cost multiplier for moving away from the target.', 2, { min: 0, max: 10, step: 0.1 });`
+
+`num('routing', 'overlapPenalty', 'Overlap penalty', 'Cost per pixel of lane shared with an unrelated connection; higher keeps unrelated lines apart.', 3, { min: 0, max: 20, step: 0.5 });`
+
+`num('routing', 'width', 'Line width (px)', 'Normal line width.', 2, { min: 0.5, max: 8, step: 0.25 });`
+
+`num('routing', 'widthSelected', 'Line width, selected (px)', 'Width when a line is in the spotlight.', 3.2, { min: 0.5, max: 10, step: 0.25 });`
+
+`num('routing', 'arrowSize', 'Arrowhead size (px)', 'Size of arrowheads on directed connections.', 9, { min: 0, max: 30 });`
+
+`bool('routing', 'labelsOnHoverOnly', 'Labels only on hover', 'Connection names show only when you hover a line or its works.', true);`
+
+`for (const [id, col, dir] of [['precedent', '#8FB8FF', true], ['inspired', '#F28CC4', true], ['contemporary', '#7ED6A0', false], ['personnel', '#C9B8FF', false], ['sample', '#F2B84B', true], ['other', '#6F7B88', true]]) {`
+
+``color('routing', `${id}.color`, `${id}: color`, 'Line color for this relation type.', col);``
+
+``bool('routing', `${id}.arrow`, `${id}: arrowhead`, 'Draw an arrowhead for this relation type.', dir);``
+
+``pick('routing', `${id}.dash`, `${id}: line style`, 'Solid, dashed or dotted.', id === 'contemporary' ? 'dashed' : id === 'personnel' ? 'dotted' : 'solid', ['solid', 'dashed', 'dotted']);``
+
+`}`
+
+`// ---------------- Hover and selection ----------------`
+
+`num('spotlight', 'dimOpacity', 'Dim opacity', 'Opacity of everything outside the spotlight.', 0.12, { min: 0, max: 1, step: 0.01 });`
+
+`num('spotlight', 'hoverDepth', 'Hover depth (links)', 'How many links away from the hovered work stay lit.', 1, { min: 0, max: 5 });`
+
+`num('spotlight', 'chainDepth', 'Selection chain depth', 'How many links away from a selected work stay shown.', 3, { min: 0, max: 20 });`
+
+`bool('spotlight', 'hoverIncludesSelection', 'Hover keeps selection lit', 'Selected chains stay lit while hovering something else.', true);`
+
+`pick('spotlight', 'multiSelectKey', 'Multi-select key', 'Hold this key while clicking to add to the selection.', 'shift', ['shift', 'ctrl', 'alt', 'meta']);`
+
+`bool('spotlight', 'followDirected', 'Follow direction only', 'Chains follow arrows forward only instead of both ways.', false);`
+
+``for (const t of RELATION_TYPES) bool('spotlight', `follow.${t}`, `Chain follows: ${t}`, 'Whether selection chains continue through this connection type (also toggled in the legend).', t !== 'other');``
+
+`num('spotlight', 'transitionMs', 'Spotlight transition (ms)', 'Fade time when the spotlight changes.', 140, { min: 0, max: 1000 });`
+
+`// ---------------- Map slots ----------------`
+
+`bool('slots', 'enabled', 'Limit map slots', 'Off by default while balancing. When on, placing a work costs a slot.', false);`
+
+`num('slots', 'initial', 'Starting slots', 'Slots available at the start.', 24, { min: 0, max: 5000 });`
+
+`num('slots', 'perLevel', 'Slots per level', 'Slots gained each level.', 4, { min: 0, max: 500 });`
+
+`num('slots', 'perChronicle', 'Slots per chronicle', 'Slots gained per completed chronicle.', 3, { min: 0, max: 100 });`
+
+`num('slots', 'perFoundations', 'Slots per Foundations run', 'Slots gained per finished Foundations set.', 5, { min: 0, max: 100 });`
+
+`num('slots', 'tokenPoints', 'Slot token price (points)', 'Cost of one extra slot in the shop.', 60, { min: 0, max: 10000 });`
+
+`bool('slots', 'refundOnRemove', 'Refund slot on removal', 'Removing a work from the map returns its slot.', true);`
+
+`bool('slots', 'shelfUnlimited', 'Shelf unlimited', 'The shelf (heard list) never has a limit.', true);`
+
+`// ---------------- Quests and chronicles ----------------`
+
+`bool('quests', 'chroniclesEnabled', 'Chronicles enabled', 'Show one-time historical story quests.', true);`
+
+`num('quests', 'chronicleStepXp', 'Chronicle step XP', 'XP per work heard in a chronicle.', 60, { min: 0, max: 2000 });`
+
+`num('quests', 'chronicleCompleteXp', 'Chronicle completion XP', 'Bonus XP for finishing a chronicle.', 400, { min: 0, max: 20000 });`
+
+`num('quests', 'chroniclePoints', 'Chronicle completion points', 'Points for finishing a chronicle.', 150, { min: 0, max: 10000 });`
+
+`num('quests', 'recentYearsWindow', 'Recent window (years)', 'Works released within this many years count as "recent" for recommendation bias.', 50, { min: 1, max: 200 });`
+
+`num('quests', 'recentBias', 'Recent bias', 'Weight multiplier for recent works in recommendations (1 = no bias).', 2, { min: 1, max: 10, step: 0.1 });`
+
+`num('quests', 'earliestYear', 'Earliest year allowed', 'Chronicles and recommendations may reach back to this year.', 1900, { min: 1850, max: 2020 });`
+
+`num('quests', 'weeklyGatewayXp', 'Weekly gateway XP', 'XP for the weekly gateway quest.', 80, { min: 0, max: 2000 });`
+
+`num('quests', 'creditHopXp', 'Credit hop quest XP', 'XP for completing a credit hop.', 70, { min: 0, max: 2000 });`
+
+`num('quests', 'counterpointXp', 'Counterpoint XP', 'XP for the counterpoint quest.', 60, { min: 0, max: 2000 });`
+
+`num('quests', 'blindSpotXp', 'Blind-spot probe XP', 'XP for rating something in your coolest territory.', 60, { min: 0, max: 2000 });`
+
+`num('quests', 'reListenXp', 'Re-listen quest XP', 'XP for the monthly re-listen quest.', 50, { min: 0, max: 2000 });`
+
+`num('quests', 'foundationsSize', 'Foundations set size', 'Number of cornerstone works per genre.', 7, { min: 3, max: 25 });`
+
+`num('quests', 'foundationsXp', 'Foundations completion XP', "XP for finishing a genre's Foundations.", 300, { min: 0, max: 20000 });`
+
+`num('quests', 'weeklyResetDay', 'Weekly reset day (0=Sun)', 'Day repeatable weekly quests refresh.', 1, { min: 0, max: 6 });`
+
+`num('quests', 'monthlyResetDay', 'Monthly reset day', 'Day of month monthly quests refresh.', 1, { min: 1, max: 28 });`
+
+`num('quests', 'maxActive', 'Max active quests', 'Cap on quests tracked at once.', 6, { min: 1, max: 50 });`
+
+`// ---------------- Unlocks and consumables ----------------`
+
+`num('shop', 'creditsLens', 'Credits Lens price', 'Points to unlock the Credits Lens.', 150, { min: 0, max: 100000 });`
+
+`num('shop', 'secondaryCreditsUses', 'Secondary credits: lookups to go free', 'Credit lookups before secondary credits show for free.', 20, { min: 0, max: 1000 });`
+
+`num('shop', 'eraLens', 'Era Lens price', 'Points to unlock the Era Lens.', 120, { min: 0, max: 100000 });`
+
+`num('shop', 'wormholes', 'Wormholes price', 'Points for cross-family links.', 600, { min: 0, max: 100000 });`
+
+`num('shop', 'wormholesChronicles', 'Wormholes: chronicles needed', 'Completed chronicles required.', 2, { min: 0, max: 50 });`
+
+`num('shop', 'personnelGraph', 'Personnel graph price', 'Points for the personnel graph.', 900, { min: 0, max: 100000 });`
+
+`num('shop', 'placeOverlay', 'Place overlay price', 'Points for the geography overlay.', 1200, { min: 0, max: 100000 });`
+
+`num('shop', 'charterSub', 'Subgenre charter price', 'Points for a subgenre charter.', 400, { min: 0, max: 100000 });`
+
+`num('shop', 'charterFamily', 'Family charter price', 'Points for a whole-family charter.', 2500, { min: 0, max: 100000 });`
+
+`num('shop', 'charterFoundations', 'Charter: Foundations needed in parent', 'Cornerstone works required in the parent genre.', 5, { min: 0, max: 25 });`
+
+`num('shop', 'lensPackPrice', 'Lens pack price', 'Points per lens pack.', 120, { min: 0, max: 10000 });`
+
+`num('shop', 'lensPackSize', 'Lens pack size', 'Charges per lens pack.', 4, { min: 1, max: 100 });`
+
+`num('shop', 'flarePackPrice', 'Scout flare pack price', 'Points per flare pack.', 90, { min: 0, max: 10000 });`
+
+`num('shop', 'flarePackSize', 'Scout flare pack size', 'Charges per flare pack.', 4, { min: 1, max: 100 });`
+
+`num('shop', 'flareSteps', 'Scout flare radius (hex steps)', 'How far a flare lifts the fog.', 2.5, { min: 0.5, max: 10, step: 0.1 });`
+
+`num('shop', 'dowsePackPrice', 'Dowsing rod pack price', 'Points per dowsing pack.', 150, { min: 0, max: 10000 });`
+
+`num('shop', 'dowsePackSize', 'Dowsing rod pack size', 'Charges per dowsing pack.', 2, { min: 1, max: 100 });`
+
+`num('shop', 'dowseMinPredicted', 'Dowsing: minimum predicted rating', 'Dowsing points at works predicted at or above this.', 8, { min: 1, max: 10, step: 0.1 });`
+
+`num('shop', 'rollPrice', 'Rarity roll price', 'Points per rarity roll.', 200, { min: 0, max: 10000 });`
+
+`bool('shop', 'unlockTimeGates', 'Enforce minimum unlock times', 'Some unlocks also need days since the last one, to stretch progress over weeks.', false);`
+
+`num('shop', 'minDaysBetweenBigUnlocks', 'Days between big unlocks', 'Minimum days between family charters and similar when time gates are on.', 7, { min: 0, max: 365 });`
+
+`// ---------------- Recommendations ----------------`
+
+`num('recs', 'perExpand', 'Works revealed per expansion', 'Candidates added each time you grow from a work, credit or relation.', 8, { min: 1, max: 100 });`
+
+`num('recs', 'maxVisible', 'Max works on screen', 'Hard cap for rendering.', 5000, { min: 100, max: 100000 });`
+
+`num('recs', 'weightTags', 'Similarity weight: tags', 'Weight of shared genre/style tags.', 1.0, { min: 0, max: 5, step: 0.05 });`
+
+`num('recs', 'weightCredits', 'Similarity weight: credits', 'Weight of shared producers, engineers and players.', 1.4, { min: 0, max: 5, step: 0.05 });`
+
+`num('recs', 'weightEra', 'Similarity weight: era', 'Weight of release-year proximity.', 0.4, { min: 0, max: 5, step: 0.05 });`
+
+`num('recs', 'weightSamples', 'Similarity weight: samples', 'Weight of sample and cover relationships.', 1.2, { min: 0, max: 5, step: 0.05 });`
+
+`num('recs', 'weightCollab', 'Similarity weight: listener overlap', 'Weight of ListenBrainz-style collaborative filtering.', 0.8, { min: 0, max: 5, step: 0.05 });`
+
+`num('recs', 'highRatingPull', 'High-rating pull', 'How strongly works similar to your high ratings are favored.', 1.5, { min: 0, max: 5, step: 0.05 });`
+
+`num('recs', 'lowRatingPush', 'Low-rating push', 'How strongly works similar to your low ratings are avoided.', 1.0, { min: 0, max: 5, step: 0.05 });`
+
+`num('recs', 'ratingNeutral', 'Neutral rating', 'Ratings above pull, below push.', 6, { min: 1, max: 10, step: 0.1 });`
+
+`num('recs', 'obscurityBoost', 'Obscurity boost', 'Extra weight for rarer works among the tiers you have unlocked.', 0.5, { min: 0, max: 5, step: 0.05 });`
+
+`num('recs', 'diversity', 'Diversity', 'Pushes recommendations to differ from each other. 0 = pure similarity.', 0.3, { min: 0, max: 1, step: 0.01 });`
+
+`num('recs', 'minYear', 'Ignore works before (year)', 'Hard floor on release year for recommendations.', 1900, { min: 1850, max: 2025 });`
+
+`bool('recs', 'albumsEpsOnly', 'Albums and EPs only', 'Exclude singles, compilations and live albums.', true);`
+
+`bool('recs', 'includeCompilations', 'Include compilations', 'Include compilations when albums-only is on.', false);`
+
+`// ---------------- Data sources ----------------`
+
+`bool('data', 'useMusicBrainz', 'Use MusicBrainz', 'Releases, credits and relationships.', true);`
+
+`bool('data', 'useListenBrainz', 'Use ListenBrainz', 'Similarity and collaborative filtering.', true);`
+
+`bool('data', 'useDiscogs', 'Use Discogs', 'Styles, have/want counts and notes. Needs your token.', false);`
+
+`bool('data', 'useLastFm', 'Use Last.fm', 'Tags and similar artists. Needs your API key.', false);`
+
+`bool('data', 'useWikipedia', 'Use Wikipedia and Wikidata', 'Bios and "influenced by" links.', true);`
+
+`pick('data', 'previewProvider', 'Preview provider', 'Where 30-second previews come from.', 'deezer', ['deezer', 'itunes', 'none']);`
+
+`text('data', 'userAgent', 'MusicBrainz user-agent', 'Required by MusicBrainz. Use an app name and a contact.', 'Strata/0.1 (you@example.com)');`
+
+`text('data', 'discogsToken', 'Discogs token', 'Personal token from your Discogs developer settings. Stored locally only.', '');`
+
+`text('data', 'lastFmKey', 'Last.fm API key', 'Stored locally only.', '');`
+
+`num('data', 'musicBrainzDelayMs', 'MusicBrainz request delay (ms)', 'Minimum time between MusicBrainz requests. They ask for about 1/second.', 1100, { min: 500, max: 10000 });`
+
+`num('data', 'cacheDays', 'Cache lifetime (days)', 'How long fetched data is reused before refetching.', 30, { min: 0, max: 3650 });`
+
+`num('data', 'bioMaxChars', 'Bio length (characters)', 'Maximum bio text shown.', 900, { min: 100, max: 5000 });`
+
+`bool('data', 'fetchOnHover', 'Fetch on hover', 'Prefetch details when you hover a work.', false);`
+
+`// ---------------- Interface ----------------`
+
+`color('ui', 'background', 'Background', 'Canvas background color.', '#0B0E12');`
+
+`color('ui', 'text', 'Text color', 'Main text color.', '#E8E4DA');`
+
+`color('ui', 'mutedText', 'Muted text color', 'Secondary text color.', '#9AA3AE');`
+
+`num('ui', 'seenDim', 'Heard art dimming', 'Opacity of art for works you have heard (lower = dimmer).', 0.5, { min: 0.1, max: 1, step: 0.01 });`
+
+`num('ui', 'unheardBrightness', 'Unheard art brightness', 'Opacity of art for works you have not heard.', 1, { min: 0.3, max: 1, step: 0.01 });`
+
+`num('ui', 'labelZoom', 'Show titles above zoom', 'Zoom level at which titles appear under tiles.', 0.6, { min: 0.1, max: 4, step: 0.05 });`
+
+`pick('ui', 'labelMode', 'Titles', 'Which tiles get titles.', 'heard-and-lit', ['all', 'heard-and-lit', 'lit', 'none']);`
+
+`bool('ui', 'playOnHover', 'Play button on art hover', 'Show a play button over the art on hover.', true);`
+
+`num('ui', 'panelWidth', 'Info panel width (px)', 'Width of the side panel.', 380, { min: 280, max: 700 });`
+
+`num('ui', 'zoomMin', 'Minimum zoom', 'Furthest you can zoom out.', 0.1, { min: 0.01, max: 1, step: 0.01 });`
+
+`num('ui', 'zoomMax', 'Maximum zoom', 'Closest you can zoom in.', 4, { min: 1, max: 20, step: 0.1 });`
+
+`num('ui', 'fontSize', 'Base font size', 'Base text size.', 13, { min: 9, max: 24 });`
+
+`bool('ui', 'reduceMotion', 'Reduce motion', 'Disable animations.', false);`
+
+`// ---------------- Saving ----------------`
+
+`num('persist', 'autosaveSeconds', 'Autosave interval (seconds)', 'How often progress is written locally.', 10, { min: 1, max: 600 });`
+
+`num('persist', 'backups', 'Backups kept', 'Rolling backups of your save.', 5, { min: 0, max: 100 });`
+
+`bool('persist', 'confirmReset', 'Confirm before reset', 'Ask before resetting progress or settings.', true);`
+
+`export const SETTINGS = S;`
+
+`export function defaults() {`
+
+`const out = {};`
+
+`for (const s of S) out[s.key] = s.default;`
+
+`return out;`
+
+`}`
+
+`=== FILE: src/settings/store.js ===`
+
+`// Settings store: flat dotted keys, overrides persisted separately from defaults.`
+
+`import { defaults, SETTINGS } from './definitions.js';`
+
+`const DEFAULTS = defaults();`
+
+`const META = Object.fromEntries(SETTINGS.map((s) => [s.key, s]));`
+
+`export function createSettings(storage = globalThis.localStorage, storageKey = 'strata.settings.v1') {`
+
+`let overrides = {};`
+
+`const listeners = new Set();`
+
+`try { overrides = JSON.parse(storage?.getItem(storageKey) || '{}'); } catch { overrides = {}; }`
+
+`function coerce(key, v) {`
+
+`const m = META[key];`
+
+`if (!m) return v;`
+
+`if (m.type === 'number') { let n = Number(v); if (!Number.isFinite(n)) n = m.default; if (m.min != null) n = Math.max(m.min, n); if (m.max != null) n = Math.min(m.max, n); return n; }`
+
+`if (m.type === 'boolean') return v === true || v === 'true';`
+
+`return String(v);`
+
+`}`
+
+`const api = {`
+
+`get(key) { if (!(key in DEFAULTS)) throw new Error('Unknown setting: ' + key); return key in overrides ? overrides[key] : DEFAULTS[key]; },`
+
+`set(key, v) { overrides[key] = coerce(key, v); if (overrides[key] === DEFAULTS[key]) delete overrides[key]; persist(); },`
+
+`reset(key) { if (key) delete overrides[key]; else overrides = {}; persist(); },`
+
+`isModified(key) { return key in overrides; },`
+
+`all() { return { ...DEFAULTS, ...overrides }; },`
+
+`exportJSON() { return JSON.stringify(overrides, null, 2); },`
+
+`importJSON(s) { const o = JSON.parse(s); overrides = {}; for (const k of Object.keys(o)) if (k in DEFAULTS) overrides[k] = coerce(k, o[k]); persist(); },`
+
+`onChange(fn) { listeners.add(fn); return () => listeners.delete(fn); }`
+
+`};`
+
+`function persist() { try { storage?.setItem(storageKey, JSON.stringify(overrides)); } catch { /* ignore */ } listeners.forEach((f) => f()); }`
+
+`return api;`
+
+`}`
+
+`// Plain-object settings for tests and tools: cfg(overrides) -> { get }`
+
+`export function plainSettings(over = {}) {`
+
+`const all = { ...DEFAULTS, ...over };`
+
+`return { get: (k) => { if (!(k in all)) throw new Error('Unknown setting: ' + k); return all[k]; }, all: () => all };`
+
+`}`
+
+`=== FILE: src/core/hex.js ===`
+
+`// Hex lattice. Works rest on lattice points ("snaps"). Rows are horizontal; neighbors sit at 0, 60, 120... degrees.`
+
+`const S3 = Math.sqrt(3) / 2;`
+
+`export function makeLattice(spacing, origin = { x: 0, y: 0 }) {`
+
+`const dx = spacing, dy = spacing * S3;`
+
+`const pointOf = (q, r) => ({ x: origin.x + dx * (q + r / 2), y: origin.y + dy * r });`
+
+`const toAxial = (x, y) => {`
+
+`const r = (y - origin.y) / dy, q = (x - origin.x) / dx - r / 2;`
+
+`let cx = Math.round(q), cz = Math.round(r), cy = Math.round(-q - r);`
+
+`const ex = Math.abs(cx - q), ez = Math.abs(cz - r), ey = Math.abs(cy + q + r);`
+
+`if (ex > ey && ex > ez) cx = -cy - cz; else if (ez > ey) cz = -cx - cy;`
+
+`return { q: cx, r: cz };`
+
+`};`
+
+`const key = (q, r) => q + ',' + r;`
+
+`const dist = (a, b) => (Math.abs(a.q - b.q) + Math.abs(a.q + a.r - b.q - b.r) + Math.abs(a.r - b.r)) / 2;`
+
+`// nearest unoccupied lattice point to (x,y), searching rings outward`
+
+`function nearestFree(x, y, occupied, blocked = () => false) {`
+
+`const c = toAxial(x, y);`
+
+`let best = null;`
+
+`for (let k = 0; k < 40; k++) {`
+
+`for (const h of ring(c, k)) {`
+
+`if (occupied.has(key(h.q, h.r))) continue;`
+
+`const p = pointOf(h.q, h.r);`
+
+`if (blocked(p)) continue;`
+
+`const d = Math.hypot(p.x - x, p.y - y);`
+
+`if (!best || d < best.d) best = { ...h, d, p };`
+
+`}`
+
+`if (best && best.d <= (k + 0.5) * dy * 0.9) break; // nothing farther ring can beat it`
+
+`}`
+
+`return best;`
+
+`}`
+
+`function ring(c, k) {`
+
+`if (k === 0) return [c];`
+
+`const dirs = [[1, 0], [0, 1], [-1, 1], [-1, 0], [0, -1], [1, -1]];`
+
+`const out = [];`
+
+`let q = c.q + dirs[4][0] * k, r = c.r + dirs[4][1] * k;`
+
+`for (let s = 0; s < 6; s++) for (let i = 0; i < k; i++) { out.push({ q, r }); q += dirs[s][0]; r += dirs[s][1]; }`
+
+`return out;`
+
+`}`
+
+`return { dx, dy, origin, pointOf, toAxial, key, dist, nearestFree, ring };`
+
+`}`
+
+`=== FILE: src/core/layout.js ===`
+
+`// Layout: fixed genre anchors + force simulation to find rough positions, then snap each work to the nearest free hex point.`
+
+`// Relatedness sets spring length: weakly related works end up a few hex points apart.`
+
+`import { FAMILY_IDS } from '../settings/definitions.js';`
+
+`import { makeLattice } from './hex.js';`
+
+`function rng(seed) { let a = seed >>> 0; return () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }`
+
+`export function anchorsFor(cfg) {`
+
+`const R = cfg.get('genres.ringRadius'); const n = FAMILY_IDS.length;`
+
+`return FAMILY_IDS.map((_, i) => { const a = -Math.PI / 2 + i * 2 * Math.PI / n; return { x: R * Math.cos(a), y: R * Math.sin(a) }; });`
+
+`}`
+
+`export function layout({ works, edges, cfg, prev = null }) {`
+
+`const lattice = makeLattice(cfg.get('layout.spacing'));`
+
+`const sp = cfg.get('layout.spacing'); const rand = rng(cfg.get('layout.seed'));`
+
+`const anchors = anchorsFor(cfg);`
+
+`const idx = new Map(works.map((w, i) => [w.id, i]));`
+
+`const target = works.map((w) => { let x = 0, y = 0, s = 0; for (const [f, wt] of Object.entries(w.fam)) { x += anchors[f].x * wt; y += anchors[f].y * wt; s += wt; } return { x: x / s, y: y / s }; });`
+
+`const P = works.map((w, i) => prev && prev[w.id] ? { ...prev[w.id] } : { x: target[i].x + (rand() - 0.5) * sp, y: target[i].y + (rand() - 0.5) * sp });`
+
+`const mass = works.map((w) => w.heard ? 1 + cfg.get('layout.massScale') * ((w.rating || 6) - 5) : 1);`
+
+`const iters = cfg.get('layout.iterations'), cool = cfg.get('layout.cooling');`
+
+`const range = cfg.get('layout.repulsionRange') * sp, rep = cfg.get('layout.repulsion'), well = cfg.get('genres.wellStrength');`
+
+`const k = cfg.get('layout.linkStrength'), base = cfg.get('layout.linkRest') * sp, stretch = cfg.get('layout.relatednessStretch');`
+
+`let alpha = 1;`
+
+`for (let it = 0; it < iters; it++) {`
+
+`const F = works.map(() => ({ x: 0, y: 0 }));`
+
+`for (let i = 0; i < works.length; i++) {`
+
+`F[i].x += (target[i].x - P[i].x) * well; F[i].y += (target[i].y - P[i].y) * well;`
+
+`for (let j = i + 1; j < works.length; j++) {`
+
+`const dx = P[i].x - P[j].x, dy = P[i].y - P[j].y, d = Math.hypot(dx, dy) || 0.01;`
+
+`if (d < range) { const f = rep * (range - d) / range * sp * 0.1; const ux = dx / d, uy = dy / d; F[i].x += ux * f * Math.sqrt(mass[j]); F[i].y += uy * f * Math.sqrt(mass[j]); F[j].x -= ux * f * Math.sqrt(mass[i]); F[j].y -= uy * f * Math.sqrt(mass[i]); }`
+
+`}`
+
+`}`
+
+`for (const e of edges) {`
+
+`const i = idx.get(e.a), j = idx.get(e.b); if (i == null || j == null) continue;`
+
+`const rest = base * (1 + stretch * (1 - (e.sim ?? 0.7)));`
+
+`const dx = P[j].x - P[i].x, dy = P[j].y - P[i].y, d = Math.hypot(dx, dy) || 0.01, f = k * (d - rest);`
+
+`F[i].x += dx / d * f; F[i].y += dy / d * f; F[j].x -= dx / d * f; F[j].y -= dy / d * f;`
+
+`}`
+
+`for (let i = 0; i < works.length; i++) { if (works[i].pinned) continue; P[i].x += Math.max(-sp * .3, Math.min(sp * .3, F[i].x)) * alpha; P[i].y += Math.max(-sp * .3, Math.min(sp * .3, F[i].y)) * alpha; }`
+
+`alpha *= cool;`
+
+`}`
+
+`// snap: heavy/heard first, then by closeness to center`
+
+`const hub = cfg.get('layout.hubRadius');`
+
+`const order = works.map((w, i) => i).sort((a, b) => (works[b].heard - works[a].heard) || (mass[b] - mass[a]) || (Math.hypot(P[a].x, P[a].y) - Math.hypot(P[b].x, P[b].y)));`
+
+`const occ = new Set(); const hex = {}, pos = {};`
+
+`for (const i of order) {`
+
+`const r = lattice.nearestFree(P[i].x, P[i].y, occ, (pt) => Math.hypot(pt.x, pt.y) < hub);`
+
+`occ.add(lattice.key(r.q, r.r)); hex[works[i].id] = { q: r.q, r: r.r }; pos[works[i].id] = { x: r.p.x, y: r.p.y };`
+
+`}`
+
+`return { pos, hex, lattice, anchors, raw: Object.fromEntries(works.map((w, i) => [w.id, P[i]])) };`
+
+`}`
+
+`=== FILE: src/core/routing.js ===`
+
+`// Connection routing on the hex lattice.`
+
+`// Straight runs travel along the three hex axes (0, 60, 120 degrees) in "lanes" half a row away from the tiles,`
+
+`// so they never cross a work. A route is: short perpendicular stub out of a tile -> lane -> (turn) -> lane -> stub into the other tile.`
+
+`// Lines that share a work (fan-out or fan-in) are bundled: they use the same stub and the same first lane, and branch off where they must.`
+
+`const S3 = Math.sqrt(3) / 2;`
+
+`export const AXES = [{ x: 1, y: 0 }, { x: 0.5, y: S3 }, { x: -0.5, y: S3 }];`
+
+`const normalOf = (a) => ({ x: -a.y, y: a.x });`
+
+`const add = (p, q, k = 1) => ({ x: p.x + q.x * k, y: p.y + q.y * k });`
+
+`const sub = (p, q) => ({ x: p.x - q.x, y: p.y - q.y });`
+
+`const dot = (p, q) => p.x * q.x + p.y * q.y;`
+
+`const cross = (p, q) => p.x * q.y - p.y * q.x;`
+
+`const len = (p) => Math.hypot(p.x, p.y);`
+
+`const near = (p, q) => Math.hypot(p.x - q.x, p.y - q.y) < 0.01;`
+
+`// Lane legs (everything between the first and last stub) as {ax, lane, t0, t1}`
+
+`function laneLegs(points) {`
+
+`const out = [];`
+
+`for (let k = 1; k < points.length - 2; k++) {`
+
+`const a = points[k], b = points[k + 1], d = sub(b, a), l = len(d); if (l < 1) continue;`
+
+`const u = { x: d.x / l, y: d.y / l };`
+
+`const ax = AXES.findIndex((A) => Math.abs(cross(A, u)) < 0.01); if (ax < 0) continue;`
+
+`const A = AXES[ax], t0 = dot(a, A), t1 = dot(b, A);`
+
+`out.push({ ax, lane: cross(A, a), t0: Math.min(t0, t1), t1: Math.max(t0, t1) });`
+
+`}`
+
+`return out;`
+
+`}`
+
+`function overlapLength(points, placed, key) {`
+
+`let total = 0;`
+
+`for (const L of laneLegs(points)) for (const q of placed) {`
+
+`if (q.ax !== L.ax || Math.abs(q.lane - L.lane) > 1 || (key && q.key === key)) continue;`
+
+`total += Math.max(0, Math.min(L.t1, q.t1) - Math.max(L.t0, q.t0));`
+
+`}`
+
+`return total;`
+
+`}`
+
+`function combos() { const o = []; for (let ax = 0; ax < 3; ax++) for (const side of [1, -1]) o.push({ ax, side }); return o; }`
+
+`const COMBOS = combos();`
+
+`function endpoint(c, half, combo, h) {`
+
+`const n = normalOf(AXES[combo.ax]);`
+
+`return { port: add(c, n, combo.side * (half + 2)), gate: add(c, n, combo.side * h), ax: combo.ax, side: combo.side };`
+
+`}`
+
+`// Route from S to T with fixed combos. Returns {points, cost} or null.`
+
+`function routeFixed(S, T, es, et, p) {`
+
+`const d1 = AXES[es.ax], d2 = AXES[et.ax], G1 = es.gate, G2 = et.gate;`
+
+`const toT = sub(T.c, S.c);`
+
+`let pts, legs = 0, back = 0, turns;`
+
+`if (es.ax === et.ax) {`
+
+`if (Math.abs(cross(sub(G2, G1), d1)) > 1) return null; // different parallel lanes`
+
+`pts = [es.port, G1, G2, et.port]; legs = len(sub(G2, G1)); turns = 2;`
+
+`if (dot(sub(G2, G1), toT) < 0) back = legs;`
+
+`} else {`
+
+`const cr = cross(d1, d2), w = sub(G2, G1);`
+
+`const t = cross(w, d2) / cr, u = cross(w, d1) / cr;`
+
+`const X = add(G1, d1, t);`
+
+`pts = [es.port, G1, X, G2, et.port]; legs = Math.abs(t) + Math.abs(u); turns = 3;`
+
+`if (dot({ x: d1.x * t, y: d1.y * t }, toT) < 0) back += Math.abs(t);`
+
+`if (dot({ x: -d2.x * u, y: -d2.y * u }, toT) < 0) back += Math.abs(u);`
+
+`}`
+
+`const clean = [pts[0]];`
+
+`for (let i = 1; i < pts.length; i++) if (!near(pts[i], clean[clean.length - 1])) clean.push(pts[i]);`
+
+`const stub = len(sub(es.gate, es.port)) + len(sub(et.gate, et.port));`
+
+`const ov = p.placed.length ? overlapLength(clean, p.placed, p.key) : 0;`
+
+`return { points: clean, cost: legs + stub + p.turn * turns + p.back * back + p.overlap * ov };`
+
+`}`
+
+`export function routeEdges({ centers, halfOf, edges, lattice, cfg }) {`
+
+`const h = lattice.dy / 2;`
+
+`const p = { turn: cfg.get('routing.turnPenalty'), back: cfg.get('routing.backtrackPenalty'), port: cfg.get('routing.portPenalty'), overlap: cfg.get('routing.overlapPenalty'), placed: [], key: null };`
+
+`const register = (points, key) => { for (const L of laneLegs(points)) p.placed.push({ ...L, key }); };`
+
+`const bundle = cfg.get('routing.bundle');`
+
+`const used = new Map(); // "id|ax|side" -> count`
+
+``const ukey = (id, c) => `${id}|${c.ax}|${c.side}`;``
+
+`const ends = (id) => COMBOS.map((cb) => ({ cb, ep: endpoint(centers[id], halfOf(id), cb, h) }));`
+
+`const E = new Map(); const endsOf = (id) => { if (!E.has(id)) E.set(id, ends(id)); return E.get(id); };`
+
+`const node = (id) => ({ c: centers[id] });`
+
+`const outdeg = {}, indeg = {};`
+
+`edges.forEach((e) => { (outdeg[e.type + '|' + e.a] = (outdeg[e.type + '|' + e.a] || 0) + 1); (indeg[e.type + '|' + e.b] = (indeg[e.type + '|' + e.b] || 0) + 1); });`
+
+`const groups = new Map(); const singles = [];`
+
+`edges.forEach((e, i) => {`
+
+`const o = outdeg[e.type + '|' + e.a], n = indeg[e.type + '|' + e.b];`
+
+`let hub = null, src = true;`
+
+`if (bundle && o >= 2 && o >= n) { hub = e.a; src = true; } else if (bundle && n >= 2) { hub = e.b; src = false; }`
+
+`if (hub == null) { singles.push(i); return; }`
+
+``const k = `${e.type}|${hub}|${src}`;``
+
+`if (!groups.has(k)) groups.set(k, { hub, src, idx: [], key: k });`
+
+`groups.get(k).idx.push(i);`
+
+`});`
+
+`const routes = new Array(edges.length).fill(null);`
+
+`const claim = (id, cb) => used.set(ukey(id, cb), (used.get(ukey(id, cb)) || 0) + 1);`
+
+`for (const g of groups.values()) {`
+
+`p.key = g.key;`
+
+`let best = null;`
+
+`for (const hc of endsOf(g.hub)) {`
+
+`let sum = 0, ok = true;`
+
+`for (const i of g.idx) {`
+
+`const leaf = g.src ? edges[i].b : edges[i].a;`
+
+`let m = Infinity;`
+
+`for (const lc of endsOf(leaf)) { const r = routeFixed(node(g.hub), node(leaf), hc.ep, lc.ep, p); if (r && r.cost < m) m = r.cost; }`
+
+`if (m === Infinity) { ok = false; break; }`
+
+`sum += m;`
+
+`}`
+
+`if (ok && (!best || sum < best.sum)) best = { hc, sum };`
+
+`}`
+
+`if (!best) { g.idx.forEach((i) => singles.push(i)); continue; }`
+
+`claim(g.hub, best.hc.cb);`
+
+`for (const i of g.idx) {`
+
+`const leaf = g.src ? edges[i].b : edges[i].a;`
+
+`let bl = null;`
+
+`for (const lc of endsOf(leaf)) {`
+
+`const r = routeFixed(node(g.hub), node(leaf), best.hc.ep, lc.ep, p);`
+
+`if (!r) continue;`
+
+`const c = r.cost + p.port * (used.get(ukey(leaf, lc.cb)) || 0);`
+
+`if (!bl || c < bl.c) bl = { c, r, lc };`
+
+`}`
+
+`claim(leaf, bl.lc.cb);`
+
+`register(bl.r.points, g.key);`
+
+`routes[i] = { points: g.src ? bl.r.points : bl.r.points.slice().reverse(), bundle: g.key, hub: g.hub };`
+
+`}`
+
+`}`
+
+`p.key = null;`
+
+`for (const i of singles) {`
+
+`const e = edges[i]; let best = null;`
+
+`for (const sc of endsOf(e.a)) for (const tc of endsOf(e.b)) {`
+
+`const r = routeFixed(node(e.a), node(e.b), sc.ep, tc.ep, p);`
+
+`if (!r) continue;`
+
+`const c = r.cost + p.port * ((used.get(ukey(e.a, sc.cb)) || 0) + (used.get(ukey(e.b, tc.cb)) || 0));`
+
+`if (!best || c < best.c) best = { c, r, sc, tc };`
+
+`}`
+
+`if (!best) { routes[i] = { points: [centers[e.a], centers[e.b]], bundle: null, hub: null }; continue; }`
+
+`claim(e.a, best.sc.cb); claim(e.b, best.tc.cb);`
+
+`register(best.r.points, null);`
+
+`routes[i] = { points: best.r.points, bundle: null, hub: null };`
+
+`}`
+
+`return routes;`
+
+`}`
+
+`// Rounded polyline as an SVG/Canvas path description: returns array of commands.`
+
+`export function roundedCommands(points, radius) {`
+
+`const cmds = [{ op: 'M', x: points[0].x, y: points[0].y }];`
+
+`for (let i = 1; i < points.length - 1; i++) {`
+
+`const a = points[i - 1], v = points[i], b = points[i + 1];`
+
+`const l1 = len(sub(v, a)), l2 = len(sub(b, v));`
+
+`const r = Math.min(radius, l1 / 2, l2 / 2);`
+
+`const p1 = add(v, sub(a, v), r / l1), p2 = add(v, sub(b, v), r / l2);`
+
+`cmds.push({ op: 'L', x: p1.x, y: p1.y }, { op: 'Q', cx: v.x, cy: v.y, x: p2.x, y: p2.y });`
+
+`}`
+
+`const last = points[points.length - 1];`
+
+`cmds.push({ op: 'L', x: last.x, y: last.y });`
+
+`return cmds;`
+
+`}`
+
+`export function pathString(points, radius) {`
+
+``return roundedCommands(points, radius).map((c) => c.op === 'Q' ? `Q${c.cx} ${c.cy} ${c.x} ${c.y}` : `${c.op}${c.x} ${c.y}`).join(' ');``
+
+`}`
+
+`export function endDirection(points) {`
+
+`const a = points[points.length - 2], b = points[points.length - 1]; const d = sub(b, a); const l = len(d) || 1; return { x: d.x / l, y: d.y / l };`
+
+`}`
+
+`=== FILE: src/core/fog.js ===`
+
+`// Mastery (how deep you are in a genre) and fog-of-war visibility.`
+
+`// Rules: a genre unlocks rarer tiers as mastery grows AND as you hear enough works in the tier below (or any rarer tier).`
+
+`// A heard work pushes the fog back further the rarer it is, scaled by how deep you are in that genre.`
+
+`import { TIER_IDS, FAMILY_IDS } from '../settings/definitions.js';`
+
+`export function ratingFactor(rating, cfg) {`
+
+`const floor = cfg.get('tiers.ratingFloor'), ceil = cfg.get('tiers.ratingCeil'), top = cfg.get('tiers.ratingTopFactor');`
+
+`if (rating <= floor) return 0;`
+
+`if (rating >= ceil) return top;`
+
+`return top * (rating - floor) / (ceil - floor);`
+
+`}`
+
+`export function computeMastery(works, cfg) {`
+
+`const acc = {}; // fam -> tier -> {sum, cnt}`
+
+`for (const f of FAMILY_IDS) acc[f] = TIER_IDS.map(() => ({ sum: 0, cnt: 0 }));`
+
+`for (const w of works) {`
+
+`if (!w.heard) continue;`
+
+`let bm = 1;`
+
+``for (const b of w.badges || []) if (cfg.get(`badges.${b}.enabled`)) bm *= cfg.get(`badges.${b}.masteryMult`);``
+
+``const val = cfg.get(`tiers.${TIER_IDS[w.tier]}.masteryValue`) * ratingFactor(w.rating, cfg) * bm;``
+
+`for (const [fam, wt] of Object.entries(w.fam)) {`
+
+`const slot = acc[FAMILY_IDS[fam]][w.tier];`
+
+`slot.sum += val * wt; slot.cnt += wt;`
+
+`}`
+
+`}`
+
+`const exp = cfg.get('tiers.diminishing');`
+
+`const mastery = {}, counts = {};`
+
+`for (const f of FAMILY_IDS) {`
+
+`let m = 0; counts[f] = [];`
+
+`acc[f].forEach((s, t) => { counts[f][t] = s.cnt; if (s.cnt > 0) m += (s.sum / s.cnt) * Math.pow(s.cnt, exp); });`
+
+`mastery[f] = m;`
+
+`}`
+
+`return { mastery, counts };`
+
+`}`
+
+`export function allowedTier(fam, ms, cfg) {`
+
+`let k = 0;`
+
+`for (let t = 1; t < TIER_IDS.length; t++) {`
+
+`const id = TIER_IDS[t];`
+
+``const needM = cfg.get(`tiers.${id}.unlockMastery`), needN = cfg.get(`tiers.${id}.prereqWorks`);``
+
+`if (ms.mastery[fam] >= needM && ms.counts[fam].slice(t - 1).reduce((a, b) => a + b, 0) >= needN - 1e-9) k = t; else break;`
+
+`}`
+
+`return k;`
+
+`}`
+
+`export const depthFactor = (fam, ms, cfg) => Math.min(1, ms.mastery[fam] / cfg.get('fog.depthReference'));`
+
+`const famsOf = (w, min = 0.3) => Object.entries(w.fam).filter(([, wt]) => wt >= min).map(([i]) => FAMILY_IDS[i]);`
+
+`const domFam = (w) => FAMILY_IDS[Object.entries(w.fam).sort((a, b) => b[1] - a[1])[0][0]];`
+
+`// hexPos: id -> {q,r}. Returns visible ids and reveal circles in lattice steps.`
+
+`export function computeVisibility(works, hexPos, lattice, cfg) {`
+
+`const ms = computeMastery(works, cfg);`
+
+`const visible = new Set(), reveals = [];`
+
+`const heard = works.filter((w) => w.heard), unheard = works.filter((w) => !w.heard);`
+
+`if (!cfg.get('fog.enabled')) { works.forEach((w) => visible.add(w.id)); return { visible, reveals, ms }; }`
+
+`for (const w of heard) visible.add(w.id);`
+
+`const allowed = {};`
+
+`for (const f of FAMILY_IDS) allowed[f] = allowedTier(f, ms, cfg);`
+
+`const cap = cfg.get('fog.maxVisiblePerHeard');`
+
+`for (const w of heard) {`
+
+`const df = depthFactor(domFam(w), ms, cfg);`
+
+``const steps = cfg.get('fog.baseSteps') + cfg.get(`tiers.${TIER_IDS[w.tier]}.fogRadiusBonus`) * df;``
+
+`const maxTier = w.tier + cfg.get('fog.tierAhead');`
+
+`const cands = [];`
+
+`for (const c of unheard) {`
+
+`const d = lattice.dist(hexPos[w.id], hexPos[c.id]);`
+
+`if (d > steps + 1e-9) continue;`
+
+`if (c.tier > maxTier) continue;`
+
+`if (c.tier > Math.max(...famsOf(c, 0.3).map((f) => allowed[f]))) continue;`
+
+`cands.push({ c, d });`
+
+`}`
+
+`cands.sort((a, b) => a.d - b.d);`
+
+`(cap > 0 ? cands.slice(0, cap) : cands).forEach(({ c }) => visible.add(c.id));`
+
+`reveals.push({ id: w.id, steps });`
+
+`}`
+
+`for (const c of unheard) if (visible.has(c.id)) reveals.push({ id: c.id, steps: cfg.get('fog.scoutSteps') });`
+
+`return { visible, reveals, ms, allowed };`
+
+`}`
+
+`=== FILE: src/core/rating.js ===`
+
+`// Vertical rating bar: continuous position -> light/decent/strong steps, with border zones between steps.`
+
+`// f is 0 at the bottom of the bar and 1 at the top. Each integer owns an equal slice; each slice is split in thirds.`
+
+`export function ratingFromFraction(f, cfg) {`
+
+`const lo = cfg.get('rating.min'), hi = cfg.get('rating.max');`
+
+`const step = cfg.get('rating.subStep'), band = cfg.get('rating.borderBand');`
+
+`const slices = hi - lo + 1;`
+
+`const v = Math.min(slices - 1e-9, Math.max(0, f * slices)); // 0 .. slices`
+
+`const n = lo + Math.floor(v);`
+
+`const within = v - Math.floor(v); // 0..1 inside the integer slice`
+
+`const thirds = within * 3; // 0..3`
+
+`const idx = Math.min(2, Math.floor(thirds));`
+
+`const fracInThird = thirds - Math.floor(thirds);`
+
+`const names = ['light', 'decent', 'strong'];`
+
+`const val = (nn, i) => nn + (i - 1) * step;`
+
+`const nearLow = fracInThird < band / 2, nearHigh = fracInThird > 1 - band / 2;`
+
+`let kind = 'step', label, value, parts;`
+
+`if (nearLow && !(idx === 0 && n === lo)) {`
+
+`// border with the previous step`
+
+`const pi = idx === 0 ? 2 : idx - 1, pn = idx === 0 ? n - 1 : n;`
+
+`kind = 'border';`
+
+`value = (val(pn, pi) + val(n, idx)) / 2;`
+
+``label = idx === 0 ? `strong ${pn} / light ${n}` : `${names[pi]}/${names[idx]} ${n}`;``
+
+`parts = [[pn, names[pi]], [n, names[idx]]];`
+
+`} else if (nearHigh && !(idx === 2 && n === hi)) {`
+
+`const ni = idx === 2 ? 0 : idx + 1, nn = idx === 2 ? n + 1 : n;`
+
+`kind = 'border';`
+
+`value = (val(n, idx) + val(nn, ni)) / 2;`
+
+``label = idx === 2 ? `strong ${n} / light ${nn}` : `${names[idx]}/${names[ni]} ${n}`;``
+
+`parts = [[n, names[idx]], [nn, names[ni]]];`
+
+`} else {`
+
+`value = val(n, idx);`
+
+``label = `${names[idx]} ${n}`;``
+
+`parts = [[n, names[idx]]];`
+
+`}`
+
+`return { n, kind, label, value: Math.round(value * 1000) / 1000, parts };`
+
+`}`
+
+`// Inverse for drawing the fill: numeric value -> bar fraction (approximate, center of the step).`
+
+`export function fractionFromValue(value, cfg) {`
+
+`const lo = cfg.get('rating.min'), hi = cfg.get('rating.max'), slices = hi - lo + 1;`
+
+`return Math.min(1, Math.max(0, (value - lo + 0.5) / slices));`
+
+`}`
+
+`=== FILE: src/core/spotlight.js ===`
+
+`// Spotlight: which works and edges stay lit. Hover is a quick look; selection persists and follows enabled relation types.`
+
+`// Edge types: 'influence' (a came before b), 'contemporary', 'personnel', 'sample', 'other'.`
+
+`// Following an influence edge forward is an "inspired" step; backward is a "precedent" step. Both are toggled separately.`
+
+`export function neighbors(id, edges, types, directed) {`
+
+`const out = [];`
+
+`for (const e of edges) {`
+
+`if (e.type === 'influence') {`
+
+`if (e.a === id && types.has('inspired')) out.push({ id: e.b, edge: e });`
+
+`else if (e.b === id && types.has('precedent') && !directed) out.push({ id: e.a, edge: e });`
+
+`} else if (types.has(e.type)) {`
+
+`if (e.a === id) out.push({ id: e.b, edge: e });`
+
+`else if (e.b === id && !directed) out.push({ id: e.a, edge: e });`
+
+`}`
+
+`}`
+
+`return out;`
+
+`}`
+
+`export function chain(startIds, edges, depth, types, directed = false) {`
+
+`const works = new Set(startIds), litEdges = new Set();`
+
+`let frontier = [...startIds];`
+
+`for (let d = 0; d < depth; d++) {`
+
+`const next = [];`
+
+`for (const id of frontier) for (const n of neighbors(id, edges, types, directed)) {`
+
+`litEdges.add(n.edge);`
+
+`if (!works.has(n.id)) { works.add(n.id); next.push(n.id); }`
+
+`}`
+
+`frontier = next;`
+
+`}`
+
+`return { works, edges: litEdges };`
+
+`}`
+
+`export function spotlight({ hoverWork, hoverEdge, selected, edges, cfg, allTypes }) {`
+
+`const sel = [...(selected || [])];`
+
+`const follow = new Set(allTypes.filter((t) => cfg.get('spotlight.follow.' + t)));`
+
+`const selLit = sel.length ? chain(sel, edges, cfg.get('spotlight.chainDepth'), follow, cfg.get('spotlight.followDirected')) : { works: new Set(), edges: new Set() };`
+
+`let hovLit = null;`
+
+`if (hoverWork) hovLit = chain([hoverWork], edges, cfg.get('spotlight.hoverDepth'), new Set(allTypes), false);`
+
+`else if (hoverEdge) hovLit = { works: new Set([hoverEdge.a, hoverEdge.b]), edges: new Set([hoverEdge]) };`
+
+`if (!hovLit) return { active: sel.length > 0, works: selLit.works, edges: selLit.edges };`
+
+`if (cfg.get('spotlight.hoverIncludesSelection')) {`
+
+`return { active: true, works: new Set([...hovLit.works, ...selLit.works]), edges: new Set([...hovLit.edges, ...selLit.edges]) };`
+
+`}`
+
+`return { active: true, works: hovLit.works, edges: hovLit.edges };`
+
+`}`
+
+`=== FILE: src/core/xp.js ===`
+
+`// XP math. All numbers come from settings.`
+
+`export function ratingXp({ work, rating, predicted, chainLen = 0, restedPool = 0, firstInFamily = false, firstInSub = false, isReRate = false, lineageDepth = 0, viaCredit = false }, cfg) {`
+
+`const tierIds = ['mainstream', 'essential', 'cult', 'niche', 'deepcut', 'ghost'];`
+
+`const base = isReRate ? cfg.get('xp.reRateBase') : cfg.get('xp.rateBase');`
+
+``const tierM = cfg.get(`tiers.${tierIds[work.tier]}.xpMult`);``
+
+`let badgeM = 1;`
+
+``for (const b of work.badges || []) if (cfg.get(`badges.${b}.enabled`)) badgeM *= cfg.get(`badges.${b}.xpMult`) ** (b === 'deepend' && rating < 7 ? 0 : 1);``
+
+`let bonus = 0;`
+
+`if (predicted != null && Math.abs(rating - predicted) >= cfg.get('xp.surpriseThreshold')) bonus += cfg.get('xp.surpriseBonus');`
+
+`if (rating <= cfg.get('xp.lowRatingFloor')) bonus += cfg.get('xp.lowRatingBonus');`
+
+`const chainBonus = Math.min(cfg.get('xp.chainCap'), chainLen * cfg.get('xp.chainPerLink'));`
+
+`const restedUse = Math.min(restedPool, base * cfg.get('xp.restedRate'));`
+
+`let xp = base * tierM * badgeM * (1 + bonus + chainBonus) + restedUse;`
+
+`xp += lineageDepth * cfg.get('xp.lineageDepthBonus') + (viaCredit ? cfg.get('xp.creditHopBonus') : 0);`
+
+`if (firstInFamily) xp += cfg.get('xp.leapBase'); else if (firstInSub) xp += cfg.get('xp.leapSubBase');`
+
+`return { xp: Math.round(xp), restedUsed: restedUse, chainBonus };`
+
+`}`
+
+`export const pointsFromXp = (xp, cfg) => Math.floor(xp * cfg.get('xp.pointsPerXp'));`
+
+`export function levelFromXp(xp, cfg) {`
+
+`let lvl = 1, need = cfg.get('xp.levelBase'), left = xp;`
+
+`while (left >= need && lvl < 999) { left -= need; need *= cfg.get('xp.levelGrowth'); lvl++; }`
+
+`return { level: lvl, into: left, need: Math.round(need) };`
+
+`}`
+
+`export function restedPoolAfter(pool, daysAway, cfg) { return Math.min(cfg.get('xp.restedCap'), pool + daysAway * cfg.get('xp.restedPerDay')); }`
+
+`=== FILE: src/core/recency.js ===`
+
+`// Recency ring fraction from days since last engagement: full for fullDays, half at halfDays, minimum after emptyDays.`
+
+`export function ringFraction(days, cfg) {`
+
+`const full = cfg.get('recency.fullDays'), half = cfg.get('recency.halfDays'), end = cfg.get('recency.emptyDays'), min = cfg.get('recency.minRing');`
+
+`if (days <= full) return 1;`
+
+`if (days >= end) return min;`
+
+`if (days <= half) return 1 - 0.5 * (days - full) / (half - full);`
+
+`return 0.5 - (0.5 - min) * (days - half) / (end - half);`
+
+`}`
+
+`export function territoryDays(daysList, cfg) {`
+
+`if (!daysList.length) return Infinity;`
+
+`const mode = cfg.get('recency.territoryMode');`
+
+`if (mode === 'latest') return Math.min(...daysList);`
+
+`if (mode === 'average') return daysList.reduce((a, b) => a + b, 0) / daysList.length;`
+
+`const s = [...daysList].sort((a, b) => a - b); return s[Math.floor(s.length / 2)];`
+
+`}`
+
+`=== FILE: src/core/badges.js ===`
+
+`// Badge icons: 24x24 stroke paths, drawn in the work's ring color. Roles live in settings (badges.*).`
+
+`export const BADGES = {`
+
+`canon: { name: 'Canon', d: 'M3 5h7a2 2 0 0 1 2 2v13a2 2 0 0 0-2-2H3zM21 5h-7a2 2 0 0 0-2 2v13a2 2 0 0 1 2-2h7z' },`
+
+`landmark: { name: 'Landmark', d: 'M6 21V3M6 4h12l-3 4 3 4H6' },`
+
+`underground: { name: 'Underground', d: 'M12 3v11M7 10l5 5 5-5M4 20h16' },`
+
+`gateway: { name: 'Gateway', d: 'M5 21V11a7 7 0 0 1 14 0v10M2 21h20M12 21v-6' },`
+
+`deepend: { name: 'Deep end', d: 'M12 12m-1.5 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0M12 12m-5 0a5 5 0 1 0 10 0M12 12m-9 0a9 9 0 1 0 18 0' },`
+
+`origin: { name: 'Origin', d: 'M12 21v-9M12 12C12 8 9 6 5 6c0 4 3 6 7 6M12 14c0-3 2-5 6-5 0 3-2 5-6 5' },`
+
+`crossover: { name: 'Crossover', d: 'M9 12m-5 0a5 5 0 1 0 10 0 5 5 0 1 0-10 0M15 12m-5 0a5 5 0 1 0 10 0 5 5 0 1 0-10 0' },`
+
+`wellspring: { name: 'Wellspring', d: 'M12 18m-2 0a2 2 0 1 0 4 0 2 2 0 1 0-4 0M7 13a7 7 0 0 1 10 0M3 9a12 12 0 0 1 18 0' },`
+
+`rediscovered: { name: 'Rediscovered', d: 'M7 3h10M7 21h10M8 3c0 5 8 5 8 9s-8 4-8 9M16 3c0 5-8 5-8 9s8 4 8 9' }`
+
+`};`
+
+`=== FILE: src/data/seed.js ===`
+
+`// Seed data: the 29 works from the design mockup. fam = {familyIndex: weight}; tier 0..5; edges are a -> b in time.`
+
+`// Years for Bulldawg, Dancing on the Wall (2026) and Still Life (2008) were verified by search; others are from memory.`
+
+`const W = (id, title, artist, year, heard, rating, daysAgo, fam, tier, badges = []) => ({ id, title, artist, year, heard, rating, daysAgo, fam, tier, badges });`
+
+`export const WORKS = [`
+
+`W('ill', 'Illmatic', 'Nas', 1994, true, 9, 0, { 0: .8, 6: .2 }, 1, ['landmark', 'canon']),`
+
+`W('let', 'The Low End Theory', 'A Tribe Called Quest', 1991, true, 9, 2, { 0: .6, 6: .4 }, 1, ['canon', 'landmark']),`
+
+`W('gk', 'good kid, m.A.A.d city', 'Kendrick Lamar', 2012, true, 8, 12, { 0: 1 }, 0),`
+
+`W('fs', 'The Forever Story', 'JID', 2022, true, 8, 6, { 0: 1 }, 2),`
+
+`W('bd', 'Bulldawg', 'Kenny Mason', 2026, true, 8, 1, { 0: .55, 3: .45 }, 3, ['crossover']),`
+
+`W('pif', 'Paid in Full', 'Eric B. & Rakim', 1987, false, 0, 9999, { 0: 1 }, 1, ['origin', 'canon']),`
+
+`W('bs', 'Black Star', 'Black Star', 1998, false, 0, 9999, { 0: .8, 6: .2 }, 2),`
+
+`W('rtd', 'Ready to Die', 'The Notorious B.I.G.', 1994, false, 0, 9999, { 0: 1 }, 0, ['canon']),`
+
+`W('rd', 'Reasonable Doubt', 'Jay-Z', 1996, false, 0, 9999, { 0: 1 }, 1, ['canon']),`
+
+`W('sm', 'Sex Machine', 'James Brown', 1970, true, 9, 90, { 1: 1 }, 1, ['origin', 'wellspring']),`
+
+`W('mb', 'Maggot Brain', 'Funkadelic', 1971, false, 0, 9999, { 1: .8, 3: .2 }, 2),`
+
+`W('rg', "There's a Riot Goin' On", 'Sly & the Family Stone', 1971, false, 0, 9999, { 1: 1 }, 1, ['landmark']),`
+
+`W('pc', 'Parcels', 'Parcels', 2018, true, 7, 30, { 1: .5, 2: .5 }, 2),`
+
+`W('ram', 'Random Access Memories', 'Daft Punk', 2013, false, 0, 9999, { 1: .4, 2: .3, 4: .3 }, 0),`
+
+`W('mu', 'Dancing on the Wall', 'MUNA', 2026, true, 7, 20, { 2: .7, 4: .3 }, 2),`
+
+`W('tk', 'Take Off Your Pants and Jacket', 'blink-182', 2001, false, 0, 9999, { 2: .5, 3: .5 }, 0),`
+
+`W('rk', 'Forget and Not Slow Down', 'Relient K', 2009, true, 8, 200, { 2: .5, 3: .5 }, 3),`
+
+`W('ok', 'Oh No', 'OK Go', 2005, true, 7, 150, { 2: .4, 3: .6 }, 2),`
+
+`W('ty', 'Typhoons', 'Royal Blood', 2021, true, 7, 8, { 3: 1 }, 0),`
+
+`W('bh', 'The Making Of', 'Bohicas', 2014, true, 6, 60, { 3: 1 }, 4, ['underground']),`
+
+`W('el', 'Elephant', 'The White Stripes', 2003, false, 0, 9999, { 3: 1 }, 1, ['canon']),`
+
+`W('ki', 'Kids', 'The Midnight', 2022, true, 8, 4, { 3: .4, 4: .6 }, 3),`
+
+`W('br', 'Bricolage', 'Amon Tobin', 1997, true, 9, 30, { 4: .8, 6: .2 }, 2, ['crossover']),`
+
+`W('en', 'Endtroducing.....', 'DJ Shadow', 1996, false, 0, 9999, { 0: .4, 4: .6 }, 2, ['origin']),`
+
+`W('sl', 'Still Life', 'Kodomo', 2008, true, 7, 300, { 4: .5, 5: .5 }, 4),`
+
+`W('ko', 'Koyaanisqatsi', 'Philip Glass', 1983, true, 9, 120, { 5: 1 }, 1, ['landmark']),`
+
+`W('gl', 'Glassworks', 'Philip Glass', 1982, false, 0, 9999, { 5: 1 }, 2),`
+
+`W('bb', 'Bitches Brew', 'Miles Davis', 1970, false, 0, 9999, { 6: 1 }, 1, ['landmark', 'deepend']),`
+
+`W('kb', 'Kind of Blue', 'Miles Davis', 1959, false, 0, 9999, { 6: 1 }, 0, ['canon', 'gateway'])`
+
+`];`
+
+`export const EDGES = [`
+
+`{ a: 'pif', b: 'ill', type: 'influence', sim: .8 }, { a: 'let', b: 'ill', type: 'influence', sim: .85 },`
+
+`{ a: 'ill', b: 'rd', type: 'influence', sim: .75 }, { a: 'rtd', b: 'rd', type: 'influence', sim: .7 },`
+
+`{ a: 'rtd', b: 'ill', type: 'contemporary', sim: .6 }, { a: 'ill', b: 'gk', type: 'influence', sim: .55 },`
+
+`{ a: 'gk', b: 'fs', type: 'influence', sim: .6 }, { a: 'sm', b: 'pc', type: 'influence', sim: .5 },`
+
+`{ a: 'pc', b: 'ram', type: 'contemporary', sim: .6 }, { a: 'br', b: 'en', type: 'contemporary', sim: .5 },`
+
+`{ a: 'ko', b: 'gl', type: 'personnel', sim: .9 }, { a: 'el', b: 'ty', type: 'influence', sim: .6 },`
+
+`{ a: 'el', b: 'bh', type: 'influence', sim: .55 }, { a: 'tk', b: 'rk', type: 'influence', sim: .6 },`
+
+`{ a: 'bd', b: 'ty', type: 'contemporary', sim: .35 }, { a: 'mu', b: 'ki', type: 'contemporary', sim: .4 },`
+
+`{ a: 'kb', b: 'bb', type: 'personnel', sim: .35 }, { a: 'ill', b: 'bd', type: 'influence', sim: .3 }`
+
+`];`
+
+`=== FILE: src/data/sources.js ===`
+
+`// Network data sources. NOT yet exercised (no network in the build sandbox) - verify each in the browser.`
+
+`// All calls are rate limited, cached in localStorage, and return null on failure instead of throwing.`
+
+`const cache = (key, ttlDays) => {`
+
+`try { const v = JSON.parse(localStorage.getItem('strata.cache.' + key) || 'null'); if (v && Date.now() - v.t < ttlDays * 864e5) return v.d; } catch { /* ignore */ }`
+
+`return undefined;`
+
+`};`
+
+`const store = (key, d) => { try { localStorage.setItem('strata.cache.' + key, JSON.stringify({ t: Date.now(), d })); } catch { /* quota */ } };`
+
+`let lastMB = 0;`
+
+`async function mbFetch(url, cfg) {`
+
+`const wait = Math.max(0, lastMB + cfg.get('data.musicBrainzDelayMs') - Date.now());`
+
+`if (wait) await new Promise((r) => setTimeout(r, wait));`
+
+`lastMB = Date.now();`
+
+``const res = await fetch(url, { headers: { Accept: 'application/json' } }); // browsers forbid setting User-Agent; MusicBrainz accepts the Origin plus a descriptive app name in the query via `fmt`.``
+
+`if (!res.ok) throw new Error('MusicBrainz ' + res.status);`
+
+`return res.json();`
+
+`}`
+
+`// Release group (album/EP) lookup with credits and relations.`
+
+`export async function lookupReleaseGroup(title, artist, cfg) {`
+
+``const key = `rg.${artist}.${title}`; const hit = cache(key, cfg.get('data.cacheDays')); if (hit !== undefined) return hit;``
+
+`try {`
+
+``const q = encodeURIComponent(`releasegroup:"${title}" AND artist:"${artist}"`);``
+
+``const s = await mbFetch(`https://musicbrainz.org/ws/2/release-group/?query=${q}&fmt=json&limit=1`, cfg);``
+
+`const rg = s['release-groups']?.[0]; if (!rg) return null;`
+
+``const full = await mbFetch(`https://musicbrainz.org/ws/2/release-group/${rg.id}?inc=artist-rels+url-rels+tags+genres+releases&fmt=json`, cfg);``
+
+``const out = { mbid: rg.id, type: full['primary-type'], secondary: full['secondary-types'] || [], genres: (full.genres || []).map((g) => g.name), tags: (full.tags || []).map((t) => t.name), relations: full.relations || [], cover: `https://coverartarchive.org/release-group/${rg.id}/front-500` };``
+
+`store(key, out); return out;`
+
+`} catch { return null; }`
+
+`}`
+
+`// Bio from Wikipedia (CC BY-SA: show attribution in the UI). Tries "Title (album)" first.`
+
+`export async function fetchBio(title, artist, cfg) {`
+
+`if (!cfg.get('data.useWikipedia')) return null;`
+
+``const key = `bio.${artist}.${title}`; const hit = cache(key, cfg.get('data.cacheDays')); if (hit !== undefined) return hit;``
+
+``for (const t of [`${title} (${artist} album)`, `${title} (album)`, title]) {``
+
+`try {`
+
+``const r = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(t.replace(/ /g, '_'))}`);``
+
+`if (!r.ok) continue; const j = await r.json();`
+
+`if (j.type === 'disambiguation' || !j.extract) continue;`
+
+`const out = { text: j.extract.slice(0, cfg.get('data.bioMaxChars')), url: j.content_urls?.desktop?.page, source: 'Wikipedia (CC BY-SA)' };`
+
+`store(key, out); return out;`
+
+`} catch { /* try next */ }`
+
+`}`
+
+`return null;`
+
+`}`
+
+`// 30-second previews. Deezer's public API does not send CORS headers, so it needs a tiny proxy; iTunes Search works directly in most browsers.`
+
+`export async function fetchPreview(title, artist, cfg) {`
+
+`const prov = cfg.get('data.previewProvider'); if (prov === 'none') return null;`
+
+``const key = `prev.${prov}.${artist}.${title}`; const hit = cache(key, cfg.get('data.cacheDays')); if (hit !== undefined) return hit;``
+
+`try {`
+
+`if (prov === 'itunes') {`
+
+``const r = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(artist + ' ' + title)}&entity=song&limit=5`);``
+
+`const j = await r.json(); const t = j.results?.find((x) => x.previewUrl); const out = t ? { url: t.previewUrl, track: t.trackName } : null; store(key, out); return out;`
+
+`}`
+
+``const r = await fetch(`https://api.deezer.com/search?q=${encodeURIComponent(`artist:"${artist}" album:"${title}"`)}&limit=5`);``
+
+`const j = await r.json(); const t = j.data?.find((x) => x.preview); const out = t ? { url: t.preview, track: t.title } : null; store(key, out); return out;`
+
+`} catch { return null; }`
+
+`}`
+
+`=== FILE: src/render/app.js ===`
+
+`// Prototype app: Canvas2D map + DOM panels. Not yet run in a browser by the author - expect small fixes on first load.`
+
+`import { createSettings } from '../settings/store.js';`
+
+`import { GROUPS, SETTINGS, TIER_IDS, FAMILY_IDS } from '../settings/definitions.js';`
+
+`import { WORKS, EDGES } from '../data/seed.js';`
+
+`import { layout } from '../core/layout.js';`
+
+`import { routeEdges, roundedCommands, endDirection } from '../core/routing.js';`
+
+`import { computeVisibility } from '../core/fog.js';`
+
+`import { spotlight } from '../core/spotlight.js';`
+
+`import { ratingFromFraction, fractionFromValue } from '../core/rating.js';`
+
+`import { ringFraction, territoryDays } from '../core/recency.js';`
+
+`import { ratingXp, levelFromXp, pointsFromXp } from '../core/xp.js';`
+
+`import { BADGES } from '../core/badges.js';`
+
+`import { fetchBio, fetchPreview, lookupReleaseGroup } from '../data/sources.js';`
+
+`const cfg = createSettings();`
+
+`const $ = (id) => document.getElementById(id);`
+
+`const canvas = $('map'), ctx = canvas.getContext('2d');`
+
+`const DAY = 864e5;`
+
+`// ---------- state ----------`
+
+`const SAVE = 'strata.state.v1';`
+
+`let state;`
+
+`function freshState() { return { xp: 0, points: 0, chain: 0, works: Object.fromEntries(WORKS.map((w) => [w.id, { heard: w.heard, rating: w.rating, last: Date.now() - (w.daysAgo > 5000 ? 0 : w.daysAgo) * DAY }])) }; }`
+
+`try { state = JSON.parse(localStorage.getItem(SAVE)) || freshState(); } catch { state = freshState(); }`
+
+`const save = () => localStorage.setItem(SAVE, JSON.stringify(state));`
+
+`const works = () => WORKS.map((w) => ({ ...w, ...state.works[w.id], daysAgo: (Date.now() - state.works[w.id].last) / DAY }));`
+
+`// ---------- derived data ----------`
+
+`let W = [], L = null, routes = [], vis = null, byId = {};`
+
+`function recompute(relayout = true) {`
+
+`W = works(); byId = Object.fromEntries(W.map((w) => [w.id, w]));`
+
+`if (relayout || !L) L = layout({ works: W.map((w) => ({ ...w })), edges: EDGES, cfg, prev: L && L.raw });`
+
+`vis = computeVisibility(W, L.hex, L.lattice, cfg);`
+
+`routes = routeEdges({ centers: L.pos, halfOf: () => cfg.get('layout.tileSize') / 2, edges: EDGES, lattice: L.lattice, cfg });`
+
+`draw();`
+
+`}`
+
+`// ---------- view ----------`
+
+`const view = { x: 0, y: 0, k: 0.8 };`
+
+`function resize() { const r = devicePixelRatio || 1; canvas.width = innerWidth * r; canvas.height = innerHeight * r; draw(); }`
+
+`const toWorld = (sx, sy) => ({ x: (sx - view.x) / view.k, y: (sy - view.y) / view.k });`
+
+`let hover = { work: null, edge: null, play: false }, selected = new Set();`
+
+`const ALL_TYPES = ['precedent', 'inspired', 'contemporary', 'personnel', 'sample', 'other'];`
+
+`// ---------- color helpers ----------`
+
+``const hueOf = (w) => { let x = 0, y = 0; for (const [i, wt] of Object.entries(w.fam)) { const h = cfg.get(`genres.${FAMILY_IDS[i]}.hue`) * Math.PI / 180; x += Math.cos(h) * wt; y += Math.sin(h) * wt; } return ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360; };``
+
+``const hsl = (h, s, l, a = 1) => `hsla(${h},${s}%,${l}%,${a})`;``
+
+``const tierColor = (t) => cfg.get(`tiers.${TIER_IDS[t]}.color`);``
+
+``const dashOf = (t) => ({ solid: [], dashed: [8, 6], dotted: [1.5, 5] })[cfg.get(`routing.${t}.dash`)];``
+
+`function edgeStyle(e) {`
+
+`let rel = e.type === 'influence' ? 'other' : e.type;`
+
+`const focus = new Set([...selected, hover.work].filter(Boolean));`
+
+`if (e.type === 'influence') { if (focus.has(e.b)) rel = 'precedent'; else if (focus.has(e.a)) rel = 'inspired'; }`
+
+``return { rel, color: cfg.get(`routing.${rel}.color`), dash: dashOf(rel), arrow: e.type === 'influence' || cfg.get(`routing.${rel}.arrow`) };``
+
+`}`
+
+`// ---------- drawing ----------`
+
+`function polyLen(pts) { let l = 0; for (let i = 1; i < pts.length; i++) l += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y); return l; }`
+
+`function polyMid(pts) { let half = polyLen(pts) / 2; for (let i = 1; i < pts.length; i++) { const d = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y); if (half <= d) { const t = half / d; return { x: pts[i - 1].x + (pts[i].x - pts[i - 1].x) * t, y: pts[i - 1].y + (pts[i].y - pts[i - 1].y) * t }; } half -= d; } return pts[0]; }`
+
+`function tracePath(pts) { for (const c of roundedCommands(pts, cfg.get('routing.cornerRadius'))) { if (c.op === 'M') ctx.moveTo(c.x, c.y); else if (c.op === 'L') ctx.lineTo(c.x, c.y); else ctx.quadraticCurveTo(c.cx, c.cy, c.x, c.y); } }`
+
+`let dirty = false;`
+
+`function draw() { if (dirty) return; dirty = true; requestAnimationFrame(render); }`
+
+`function render() {`
+
+`dirty = false; if (!L) return;`
+
+`const r = devicePixelRatio || 1;`
+
+`ctx.setTransform(r, 0, 0, r, 0, 0); ctx.fillStyle = cfg.get('ui.background'); ctx.fillRect(0, 0, innerWidth, innerHeight);`
+
+`ctx.save(); ctx.translate(view.x, view.y); ctx.scale(view.k, view.k);`
+
+`const sp = cfg.get('layout.spacing'), tile = cfg.get('layout.tileSize');`
+
+`// territories`
+
+`ctx.globalCompositeOperation = 'lighter';`
+
+``L.anchors.forEach((a, i) => { const h = cfg.get(`genres.${FAMILY_IDS[i]}.hue`), R = cfg.get('genres.territoryRadius'); const g = ctx.createRadialGradient(a.x * 1.08, a.y * 1.08, 0, a.x * 1.08, a.y * 1.08, R); g.addColorStop(0, hsl(h, cfg.get('genres.saturation'), 40, cfg.get('genres.territoryOpacity') * 0.6)); g.addColorStop(1, hsl(h, cfg.get('genres.saturation'), 40, 0)); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(a.x * 1.08, a.y * 1.08, R, 0, 7); ctx.fill(); });``
+
+`ctx.globalCompositeOperation = 'source-over';`
+
+`// hex dots`
+
+`if (cfg.get('layout.showHexDots')) {`
+
+``ctx.fillStyle = `rgba(140,155,175,${cfg.get('layout.hexDotOpacity')})`;``
+
+`const x0 = -view.x / view.k, y0 = -view.y / view.k, x1 = x0 + innerWidth / view.k, y1 = y0 + innerHeight / view.k;`
+
+`const a = L.lattice.toAxial(x0, y0), b = L.lattice.toAxial(x1, y1);`
+
+`for (let q = a.q - 40; q <= b.q + 40; q++) for (let rr = a.r - 2; rr <= b.r + 2; rr++) { const p = L.lattice.pointOf(q, rr); if (p.x < x0 - sp || p.x > x1 + sp || p.y < y0 - sp || p.y > y1 + sp) continue; ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, 7); ctx.fill(); }`
+
+`}`
+
+`const sl = spotlight({ hoverWork: hover.work, hoverEdge: hover.edge, selected, edges: EDGES, cfg, allTypes: ALL_TYPES });`
+
+`const dim = cfg.get('spotlight.dimOpacity');`
+
+`const lit = (id) => !sl.active || sl.works.has(id);`
+
+`// edges`
+
+`EDGES.forEach((e, i) => {`
+
+`if (!vis.visible.has(e.a) || !vis.visible.has(e.b)) return;`
+
+`const isLit = !sl.active || sl.edges.has(e); const st = edgeStyle(e);`
+
+`ctx.globalAlpha = isLit ? 1 : dim; ctx.strokeStyle = st.color; ctx.lineWidth = isLit && sl.active ? cfg.get('routing.widthSelected') : cfg.get('routing.width'); ctx.setLineDash(st.dash); ctx.lineCap = st.dash[0] < 2 ? 'round' : 'butt';`
+
+`ctx.beginPath(); tracePath(routes[i].points); ctx.stroke(); ctx.setLineDash([]);`
+
+`if (st.arrow) { const p = routes[i].points[routes[i].points.length - 1], d = endDirection(routes[i].points), s = cfg.get('routing.arrowSize'); ctx.fillStyle = st.color; ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - d.x * s - d.y * s * 0.5, p.y - d.y * s + d.x * s * 0.5); ctx.lineTo(p.x - d.x * s + d.y * s * 0.5, p.y - d.y * s - d.x * s * 0.5); ctx.closePath(); ctx.fill(); }`
+
+`});`
+
+`ctx.globalAlpha = 1;`
+
+`// fog layer`
+
+`if (cfg.get('fog.enabled')) {`
+
+`const off = fogCanvas(); ctx.save(); ctx.setTransform(r, 0, 0, r, 0, 0); ctx.drawImage(off, 0, 0, innerWidth, innerHeight); ctx.restore();`
+
+`}`
+
+`// tiles`
+
+`const order = W.filter((w) => vis.visible.has(w.id)).sort((a, b) => (selected.has(a.id) - selected.has(b.id)) || ((hover.work === a.id) - (hover.work === b.id)));`
+
+`for (const w of order) drawTile(w, tile, lit(w.id) ? 1 : dim);`
+
+`// edge labels`
+
+`const focusEdges = hover.edge ? [hover.edge] : EDGES.filter((e) => (sl.edges.has(e)) && (selected.has(e.a) || selected.has(e.b) || hover.work === e.a || hover.work === e.b));`
+
+`if (sl.active) ctx.font = '11px ui-monospace, monospace', ctx.textAlign = 'center', ctx.textBaseline = 'middle';`
+
+`for (const e of (cfg.get('routing.labelsOnHoverOnly') ? focusEdges : [...sl.edges])) {`
+
+`const i = EDGES.indexOf(e); if (!routes[i] || !vis.visible.has(e.a) || !vis.visible.has(e.b)) continue;`
+
+`const st = edgeStyle(e), m = polyMid(routes[i].points), label = st.rel === 'other' ? 'linked' : st.rel, wd = ctx.measureText(label).width + 16;`
+
+`ctx.fillStyle = '#0B0E12'; ctx.strokeStyle = st.color; ctx.lineWidth = 1; ctx.beginPath(); ctx.roundRect(m.x - wd / 2, m.y - 10, wd, 20, 10); ctx.fill(); ctx.stroke(); ctx.fillStyle = st.color; ctx.fillText(label, m.x, m.y + 1);`
+
+`}`
+
+`// territory labels`
+
+`ctx.textAlign = 'center'; ctx.font = '12px ui-monospace, monospace';`
+
+`L.anchors.forEach((a, i) => {`
+
+``const id = FAMILY_IDS[i], h = cfg.get(`genres.${id}.hue`), ws = W.filter((w) => w.heard && (w.fam[i] || 0) >= 0.5);``
+
+``const d = territoryDays(ws.map((w) => w.daysAgo), cfg), rec = ws.length ? `visited ${d < 1 ? 'today' : Math.round(d) + 'd ago'}` : 'unexplored';``
+
+``const x = a.x * 1.38, y = a.y * 1.38; ctx.fillStyle = hsl(h, 70, 72); ctx.fillText(cfg.get(`genres.${id}.name`).toUpperCase(), x, y); ctx.fillStyle = cfg.get('ui.mutedText'); ctx.font = '10.5px ui-monospace, monospace'; ctx.fillText(rec, x, y + 15); ctx.font = '12px ui-monospace, monospace';``
+
+`});`
+
+`ctx.restore();`
+
+`hud();`
+
+`}`
+
+`let fogC = null;`
+
+`function fogCanvas() {`
+
+`const c = fogC || (fogC = document.createElement('canvas')); c.width = innerWidth; c.height = innerHeight; const g = c.getContext('2d');`
+
+`g.fillStyle = cfg.get('fog.color'); g.globalAlpha = cfg.get('fog.opacity'); g.fillRect(0, 0, c.width, c.height); g.globalAlpha = 1; g.globalCompositeOperation = 'destination-out';`
+
+``g.filter = `blur(${cfg.get('fog.softness') * view.k / 2}px)`;``
+
+`const sp = cfg.get('layout.spacing');`
+
+`for (const rv of vis.reveals) { const p = L.pos[rv.id]; if (!p) continue; g.beginPath(); g.arc(p.x * view.k + view.x, p.y * view.k + view.y, (rv.steps + 0.6) * sp * view.k, 0, 7); g.fill(); }`
+
+`g.beginPath(); g.arc(view.x, view.y, cfg.get('layout.hubRadius') * 1.4 * view.k, 0, 7); g.fill();`
+
+`return c;`
+
+`}`
+
+`function drawTile(w, tile, alpha) {`
+
+`const p = L.pos[w.id], sel = selected.has(w.id), s = tile * (sel ? cfg.get('layout.selectedScale') : 1), x = p.x - s / 2, y = p.y - s / 2, h = hueOf(w);`
+
+`const rw = cfg.get('tiers.ringWidth'), gap = cfg.get('tiers.ringGap'), rc = tierColor(w.tier);`
+
+`ctx.globalAlpha = alpha;`
+
+`// ring (rarity)`
+
+`ctx.lineWidth = rw; ctx.strokeStyle = rc; ctx.beginPath(); ctx.roundRect(x - gap - rw / 2, y - gap - rw / 2, s + 2 * gap + rw, s + 2 * gap + rw, 9); ctx.stroke();`
+
+`// art placeholder (replace with cover art): heard = dim, unheard = bright`
+
+`ctx.globalAlpha = alpha * (w.heard ? cfg.get('ui.seenDim') : cfg.get('ui.unheardBrightness'));`
+
+`ctx.fillStyle = hsl(h, 42, 31); ctx.beginPath(); ctx.roundRect(x, y, s, s, 6); ctx.fill();`
+
+``ctx.fillStyle = hsl(h, 70, 88); ctx.font = `500 ${s * 0.3}px ui-monospace, monospace`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(w.title.slice(0, 2).toUpperCase(), p.x, p.y);``
+
+`ctx.globalAlpha = alpha;`
+
+`// recency gauge (heard only)`
+
+`if (w.heard) { const f = ringFraction(w.daysAgo, cfg); ctx.strokeStyle = '#2B3644'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(x + s - 8, y + s - 8, 6, 0, 7); ctx.stroke(); ctx.strokeStyle = '#9FE8FF'; ctx.beginPath(); ctx.arc(x + s - 8, y + s - 8, 6, -Math.PI / 2, -Math.PI / 2 + f * 2 * Math.PI); ctx.stroke(); }`
+
+`// badges in ring color`
+
+`let bx = x + 3; const bs = cfg.get('badges.size');`
+
+``for (const b of w.badges || []) { if (!cfg.get(`badges.${b}.enabled`)) continue; ctx.save(); ctx.translate(bx, y + 3); ctx.scale(bs / 24, bs / 24); ctx.strokeStyle = cfg.get('badges.matchRingColor') ? rc : '#E8E4DA'; ctx.lineWidth = 2.2; ctx.lineCap = 'round'; ctx.stroke(new Path2D(BADGES[b].d)); ctx.restore(); bx += bs + 2; }``
+
+`// play on hover`
+
+`if (cfg.get('ui.playOnHover') && hover.work === w.id) { ctx.fillStyle = 'rgba(11,14,18,.55)'; ctx.beginPath(); ctx.roundRect(x, y, s, s, 6); ctx.fill(); ctx.fillStyle = '#EDE9DF'; ctx.beginPath(); ctx.arc(p.x, p.y, 15, 0, 7); ctx.fill(); ctx.fillStyle = '#0B0E12'; ctx.beginPath(); ctx.moveTo(p.x - 4, p.y - 7); ctx.lineTo(p.x + 8, p.y); ctx.lineTo(p.x - 4, p.y + 7); ctx.closePath(); ctx.fill(); }`
+
+`// title`
+
+`const mode = cfg.get('ui.labelMode'), litNow = alpha >= 1;`
+
+``if (view.k >= cfg.get('ui.labelZoom') && (mode === 'all' || (mode === 'heard-and-lit' && (w.heard || litNow && (selected.size || hover.work))) || (mode === 'lit' && litNow && (selected.size || hover.work)) || sel || hover.work === w.id)) { ctx.fillStyle = cfg.get('ui.text'); ctx.font = `12px system-ui`; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText(w.title.length > 22 ? w.title.slice(0, 21) + '…' : w.title, p.x, y + s + 8); }``
+
+`ctx.globalAlpha = 1;`
+
+`}`
+
+``function hud() { const lv = levelFromXp(state.xp, cfg); $('xp').textContent = `Lv ${lv.level} · ${state.xp} XP · ${state.points} pts · chain ${state.chain}`; $('hud').textContent = `${vis.visible.size}/${W.length} visible · zoom ${view.k.toFixed(2)} · selected ${selected.size}`; }``
+
+`// ---------- interaction ----------`
+
+`function pick(sx, sy) {`
+
+`const p = toWorld(sx, sy), tile = cfg.get('layout.tileSize');`
+
+`for (const w of W) { if (!vis.visible.has(w.id)) continue; const q = L.pos[w.id]; if (Math.abs(p.x - q.x) <= tile / 2 + 6 && Math.abs(p.y - q.y) <= tile / 2 + 6) return { work: w.id }; }`
+
+`let best = null;`
+
+`EDGES.forEach((e, i) => { if (!vis.visible.has(e.a) || !vis.visible.has(e.b)) return; const pts = routes[i].points; for (let k = 1; k < pts.length; k++) { const a = pts[k - 1], b = pts[k], dx = b.x - a.x, dy = b.y - a.y, t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy || 1))), d = Math.hypot(a.x + dx * t - p.x, a.y + dy * t - p.y); if (d < 8 / view.k && (!best || d < best.d)) best = { d, edge: e }; } });`
+
+`return best ? { edge: best.edge } : {};`
+
+`}`
+
+`let drag = null;`
+
+`canvas.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y, moved: false }; canvas.setPointerCapture(e.pointerId); });`
+
+`canvas.addEventListener('pointermove', (e) => {`
+
+`if (drag) { const dx = e.clientX - drag.x, dy = e.clientY - drag.y; if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true; if (drag.moved) { view.x = drag.vx + dx; view.y = drag.vy + dy; draw(); return; } }`
+
+`const h = pick(e.clientX, e.clientY); if (h.work !== hover.work || h.edge !== hover.edge) { hover = { work: h.work || null, edge: h.edge || null }; canvas.style.cursor = h.work || h.edge ? 'pointer' : 'default'; draw(); }`
+
+`});`
+
+`canvas.addEventListener('pointerup', (e) => {`
+
+`const moved = drag?.moved; drag = null; if (moved) return;`
+
+`const h = pick(e.clientX, e.clientY), multi = e[cfg.get('spotlight.multiSelectKey') + 'Key'];`
+
+`if (h.work) { if (!multi) { const was = selected.has(h.work) && selected.size === 1; selected.clear(); if (!was) selected.add(h.work); } else selected.has(h.work) ? selected.delete(h.work) : selected.add(h.work); if (cfg.get('recency.countOpenAsEngaged') && selected.has(h.work)) { state.works[h.work].last = Date.now(); save(); } } else if (!multi) selected.clear();`
+
+`showPanel(); draw();`
+
+`});`
+
+`canvas.addEventListener('wheel', (e) => { e.preventDefault(); const k0 = view.k, k1 = Math.min(cfg.get('ui.zoomMax'), Math.max(cfg.get('ui.zoomMin'), k0 * Math.exp(-e.deltaY * 0.0012))); view.x = e.clientX - (e.clientX - view.x) * k1 / k0; view.y = e.clientY - (e.clientY - view.y) * k1 / k0; view.k = k1; draw(); }, { passive: false });`
+
+`addEventListener('resize', resize);`
+
+`// ---------- legend ----------`
+
+`function buildLegend() {`
+
+`const el = $('legend'); el.innerHTML = '<h3>CHAINS FOLLOW</h3>';`
+
+`for (const t of ['precedent', 'inspired', 'contemporary', 'personnel', 'sample']) {`
+
+``const col = cfg.get(`routing.${t === 'precedent' || t === 'inspired' ? t : t}.color`);``
+
+``const lab = document.createElement('label'); lab.innerHTML = `<input type="checkbox" ${cfg.get('spotlight.follow.' + t) ? 'checked' : ''}><span class="sw" style="border-color:${col}"></span>${t}`;``
+
+`lab.querySelector('input').addEventListener('change', (e) => { cfg.set('spotlight.follow.' + t, e.target.checked); draw(); }); el.appendChild(lab);`
+
+`}`
+
+`const h = document.createElement('h3'); h.textContent = 'RARITY RINGS'; h.style.marginTop = '8px'; el.appendChild(h);`
+
+`const row = document.createElement('div'); row.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px 10px;font-size:11px;color:var(--muted)';`
+
+``row.innerHTML = TIER_IDS.map((t) => `<span style="display:flex;align-items:center;gap:5px"><span style="width:12px;height:12px;border-radius:3px;border:3px solid ${cfg.get(`tiers.${t}.color`)}"></span>${cfg.get(`tiers.${t}.name`)}</span>`).join(''); el.appendChild(row);``
+
+`const n = document.createElement('div'); n.style.cssText = 'font-size:11px;color:var(--muted);margin-top:6px'; n.textContent = 'Dim art = heard. Bright art = not heard yet. Gauge in the corner = how recently you engaged.'; el.appendChild(n);`
+
+`}`
+
+`// ---------- info panel ----------`
+
+`let audio = null;`
+
+`async function showPanel() {`
+
+`const panel = $('panel'); const id = [...selected].pop(); if (!id) { panel.style.display = 'none'; return; }`
+
+`const w = byId[id]; panel.style.display = 'block'; refreshRating(w);`
+
+``const badges = (w.badges || []).map((b) => `<span class="chip" style="border-color:${tierColor(w.tier)};color:${tierColor(w.tier)}">${BADGES[b].name}</span>`).join('');``
+
+``$('panelbody').innerHTML = `<h3>${w.heard ? 'HEARD' : 'NOT HEARD YET'}</h3><h2>${w.title}</h2><div class="muted">${w.artist} · ${w.year}</div><div style="margin:8px 0"><span class="chip" style="border-color:${tierColor(w.tier)}">${cfg.get(`tiers.${TIER_IDS[w.tier]}.name`)}</span>${badges}</div><button id="btnPlay">▶ Preview</button><h3 style="margin-top:16px">ABOUT</h3><p id="bio" class="muted">Loading…</p><h3>CREDITS</h3><p id="credits" class="muted">Loading…</p>`;``
+
+`$('btnPlay').onclick = async () => { const p = await fetchPreview(w.title, w.artist, cfg); if (!p) return alert('No preview found (Deezer needs a CORS proxy; try iTunes in settings).'); audio?.pause(); audio = new Audio(p.url); audio.play(); if (cfg.get('recency.countPlayAsEngaged')) { state.works[w.id].last = Date.now(); save(); draw(); } };`
+
+``fetchBio(w.title, w.artist, cfg).then((b) => { if ($('bio')) $('bio').innerHTML = b ? `${b.text} <a href="${b.url}" target="_blank" rel="noopener" style="color:var(--accent)">${b.source}</a>` : 'No bio found.'; });``
+
+``lookupReleaseGroup(w.title, w.artist, cfg).then((r) => { if ($('credits')) $('credits').textContent = r ? `${(r.genres.concat(r.tags)).slice(0, 8).join(', ') || 'no tags'}; ${r.relations.length} relationships on MusicBrainz` : 'Not found on MusicBrainz.'; });``
+
+`}`
+
+`function refreshRating(w) { const f = w.heard ? fractionFromValue(w.rating, cfg) : 0; $('ratingfill').style.height = (f * 100) + '%'; }`
+
+`(() => {`
+
+`const bar = $('ratingbar'), tip = $('ratingtip'), hv = $('ratinghover');`
+
+`const frac = (e) => { const r = bar.getBoundingClientRect(); return 1 - Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)); };`
+
+``bar.addEventListener('mousemove', (e) => { const f = frac(e), r = ratingFromFraction(f, cfg); tip.style.display = 'block'; tip.style.left = e.clientX + 18 + 'px'; tip.style.top = e.clientY - 14 + 'px'; tip.textContent = r.label + (cfg.get('rating.showNumeric') ? ` (${r.value})` : ''); hv.style.display = 'block'; hv.style.bottom = f * 100 + '%'; });``
+
+`bar.addEventListener('mouseleave', () => { tip.style.display = 'none'; hv.style.display = 'none'; });`
+
+`bar.addEventListener('click', (e) => {`
+
+`const id = [...selected].pop(); if (!id) return; const r = ratingFromFraction(frac(e), cfg), w = byId[id], first = !w.heard;`
+
+`const g = ratingXp({ work: w, rating: r.value, predicted: null, chainLen: state.chain, firstInFamily: false, isReRate: !first }, cfg);`
+
+`state.works[id] = { heard: true, rating: r.value, last: Date.now() }; state.xp += g.xp; state.points += pointsFromXp(g.xp, cfg); state.chain = r.value >= cfg.get('xp.chainMinRating') ? state.chain + 1 : state.chain; save(); recompute(false); showPanel();`
+
+`});`
+
+`})();`
+
+`// ---------- settings panel ----------`
+
+`function buildSettings() {`
+
+`const body = $('sbody'); body.innerHTML = '';`
+
+`for (const [g, name] of GROUPS) {`
+
+`const d = document.createElement('details'); d.dataset.group = g; const s = document.createElement('summary'); s.textContent = name; d.appendChild(s);`
+
+`for (const def of SETTINGS.filter((x) => x.group === g)) {`
+
+`const row = document.createElement('div'); row.className = 'row' + (cfg.isModified(def.key) ? ' mod' : ''); row.dataset.text = (def.label + ' ' + def.help + ' ' + def.key).toLowerCase();`
+
+`const v = cfg.get(def.key); let input;`
+
+`if (def.type === 'boolean') { input = document.createElement('input'); input.type = 'checkbox'; input.checked = v; }`
+
+`else if (def.type === 'select') { input = document.createElement('select'); def.options.forEach((o) => { const op = document.createElement('option'); op.value = op.textContent = o; input.appendChild(op); }); input.value = v; }`
+
+`else if (def.type === 'color') { input = document.createElement('input'); input.type = 'color'; input.value = v; }`
+
+`else { input = document.createElement('input'); input.type = def.type === 'number' ? 'number' : 'text'; input.value = v; if (def.type === 'number') { if (def.min != null) input.min = def.min; if (def.max != null) input.max = def.max; input.step = def.step ?? (Number.isInteger(def.default) ? 1 : 0.01); } }`
+
+`input.addEventListener('change', () => { cfg.set(def.key, def.type === 'boolean' ? input.checked : input.value); onSettingsChanged(def.group); buildSettings(); });`
+
+``const lab = document.createElement('div'); lab.innerHTML = `<label>${def.label}</label><small>${def.help} <code>${def.key}</code></small>`;``
+
+`const rs = document.createElement('button'); rs.textContent = '↺'; rs.title = 'Reset to default'; rs.style.padding = '0'; rs.style.visibility = cfg.isModified(def.key) ? 'visible' : 'hidden'; rs.onclick = () => { cfg.reset(def.key); onSettingsChanged(def.group); buildSettings(); };`
+
+`row.append(lab, input, rs); d.appendChild(row);`
+
+`}`
+
+`body.appendChild(d);`
+
+`}`
+
+`applyFilter();`
+
+`}`
+
+`function applyFilter() { const q = $('sfilter').value.toLowerCase(); document.querySelectorAll('#sbody .row').forEach((r) => { r.style.display = !q || r.dataset.text.includes(q) ? '' : 'none'; }); document.querySelectorAll('#sbody details').forEach((d) => { if (q) d.open = true; }); }`
+
+`let t0; function onSettingsChanged(group) { clearTimeout(t0); t0 = setTimeout(() => { buildLegend(); recompute(['layout', 'genres', 'routing'].includes(group)); }, 150); }`
+
+`$('sfilter').addEventListener('input', applyFilter);`
+
+`$('btnSettings').onclick = () => { const s = $('settings'); s.style.display = s.style.display === 'flex' ? 'none' : 'flex'; if (s.style.display === 'flex') buildSettings(); };`
+
+`$('sexport').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([cfg.exportJSON()], { type: 'application/json' })); a.download = 'strata-settings.json'; a.click(); };`
+
+`$('simport').onclick = () => { const i = document.createElement('input'); i.type = 'file'; i.accept = '.json'; i.onchange = async () => { cfg.importJSON(await i.files[0].text()); buildSettings(); buildLegend(); recompute(true); }; i.click(); };`
+
+`$('sreset').onclick = () => { if (!cfg.get('persist.confirmReset') || confirm('Reset all settings to defaults?')) { cfg.reset(); buildSettings(); buildLegend(); recompute(true); } };`
+
+`$('btnReset').onclick = () => { if (!cfg.get('persist.confirmReset') || confirm('Reset all progress?')) { state = freshState(); selected.clear(); save(); showPanel(); recompute(true); } };`
+
+`setInterval(save, 1000 * 10);`
+
+`// ---------- start ----------`
+
+`view.x = innerWidth / 2 - 300; view.y = innerHeight / 2;`
+
+`buildLegend(); resize(); recompute(true);`
+
+`=== FILE: test/core.test.js ===`
+
+`import test from 'node:test';`
+
+`import assert from 'node:assert/strict';`
+
+`import { plainSettings } from '../src/settings/store.js';`
+
+`import { SETTINGS } from '../src/settings/definitions.js';`
+
+`import { ratingFromFraction } from '../src/core/rating.js';`
+
+`import { makeLattice } from '../src/core/hex.js';`
+
+`import { ringFraction } from '../src/core/recency.js';`
+
+`import { chain, spotlight } from '../src/core/spotlight.js';`
+
+`import { computeMastery, allowedTier, computeVisibility } from '../src/core/fog.js';`
+
+`import { ratingXp, levelFromXp } from '../src/core/xp.js';`
+
+`import { WORKS, EDGES } from '../src/data/seed.js';`
+
+`const cfg = plainSettings();`
+
+`test('settings: unique keys, defaults inside min/max, every key has help text', () => {`
+
+`const seen = new Set();`
+
+`for (const s of SETTINGS) {`
+
+`assert.ok(!seen.has(s.key), 'duplicate ' + s.key); seen.add(s.key);`
+
+`assert.ok(s.help && s.label, 'missing text for ' + s.key);`
+
+`if (s.type === 'number') { if (s.min != null) assert.ok(s.default >= s.min, s.key); if (s.max != null) assert.ok(s.default <= s.max, s.key); }`
+
+`}`
+
+`assert.ok(SETTINGS.length > 250);`
+
+`});`
+
+`test('rating bar: thirds, borders and ordering', () => {`
+
+`const at = (f) => ratingFromFraction(f, cfg);`
+
+`assert.equal(at(0.7167).label, 'light 8');`
+
+`assert.equal(at(0.75).label, 'decent 8');`
+
+`assert.equal(at(0.7833).label, 'strong 8');`
+
+`assert.equal(at(0.7333).label, 'light/decent 8');`
+
+`assert.equal(at(0.7667).label, 'decent/strong 8');`
+
+`assert.equal(at(0.8).label, 'strong 8 / light 9');`
+
+`assert.equal(at(0).label, 'light 1');`
+
+`assert.equal(at(1).label, 'strong 10');`
+
+`let prev = -Infinity;`
+
+`for (let f = 0; f <= 1; f += 0.001) { const v = at(f).value; assert.ok(v >= prev - 1e-9, 'not monotonic at ' + f); prev = v; }`
+
+`});`
+
+`test('hex lattice: round trip and nearest free', () => {`
+
+`const L = makeLattice(100);`
+
+`for (const [q, r] of [[0, 0], [3, -2], [-4, 5]]) { const p = L.pointOf(q, r); assert.deepEqual(L.toAxial(p.x, p.y), { q, r }); }`
+
+`const occ = new Set([L.key(0, 0)]);`
+
+`const n = L.nearestFree(1, 1, occ);`
+
+`assert.notDeepEqual([n.q, n.r], [0, 0]);`
+
+`assert.equal(L.dist({ q: 0, r: 0 }, { q: 1, r: 0 }), 1);`
+
+`assert.equal(L.dist({ q: 0, r: 0 }, { q: 2, r: -1 }), 2);`
+
+`});`
+
+`test('recency ring: full, half, floor', () => {`
+
+`assert.equal(ringFraction(0, cfg), 1);`
+
+`assert.ok(Math.abs(ringFraction(60, cfg) - 0.5) < 1e-9);`
+
+`assert.equal(ringFraction(5000, cfg), cfg.get('recency.minRing'));`
+
+`});`
+
+`test('spotlight: chain depth and relation toggles', () => {`
+
+`const types = ['precedent', 'inspired', 'contemporary', 'personnel', 'sample', 'other'];`
+
+`const c1 = chain(['ill'], EDGES, 1, new Set(types));`
+
+`assert.ok(c1.works.has('pif') && c1.works.has('rd') && c1.works.has('gk'));`
+
+`assert.ok(!c1.works.has('fs'));`
+
+`const c2 = chain(['ill'], EDGES, 2, new Set(types));`
+
+`assert.ok(c2.works.has('fs'));`
+
+`const noPrec = chain(['ill'], EDGES, 1, new Set(['inspired']));`
+
+`assert.ok(!noPrec.works.has('pif') && noPrec.works.has('rd'));`
+
+`const s = spotlight({ hoverWork: 'sm', selected: ['ill'], edges: EDGES, cfg, allTypes: types });`
+
+`assert.ok(s.works.has('sm') && s.works.has('pc') && s.works.has('ill'));`
+
+`const multi = spotlight({ selected: ['ill', 'sm'], edges: EDGES, cfg, allTypes: types });`
+
+`assert.ok(multi.works.has('pc') && multi.works.has('pif'));`
+
+`});`
+
+`test('xp: tier multiplier, surprise, chain cap', () => {`
+
+`const w = { tier: 3, badges: [] };`
+
+`const base = ratingXp({ work: w, rating: 8, predicted: 8 }, cfg).xp;`
+
+`const surprise = ratingXp({ work: w, rating: 8, predicted: 4 }, cfg).xp;`
+
+`assert.ok(surprise > base);`
+
+`const capped = ratingXp({ work: w, rating: 8, predicted: 8, chainLen: 1000 }, cfg).chainBonus;`
+
+`assert.equal(capped, cfg.get('xp.chainCap'));`
+
+`assert.ok(ratingXp({ work: { tier: 5, badges: [] }, rating: 8, predicted: 8 }, cfg).xp > base);`
+
+`assert.equal(levelFromXp(0, cfg).level, 1);`
+
+`assert.ok(levelFromXp(1000, cfg).level > 2);`
+
+`});`
+
+`// helpers for fog scenarios`
+
+`let uid = 0;`
+
+`const mk = (tier, rating, fam = { 0: 1 }, heard = true) => ({ id: 'w' + uid++, heard, rating, tier, fam, badges: [] });`
+
+`const L = makeLattice(120);`
+
+`function place(works) { const hp = {}; works.forEach((w, i) => { hp[w.id] = { q: i % 5 - 2, r: Math.floor(i / 5) - 2 }; }); return hp; }`
+
+`test('fog: a few mainstream hits unlock essential, not cult or deeper', () => {`
+
+`const heard = [mk(0, 8), mk(0, 8), mk(0, 8)];`
+
+`const cands = [mk(1, 0, { 0: 1 }, false), mk(2, 0, { 0: 1 }, false), mk(4, 0, { 0: 1 }, false)];`
+
+`const works = [...heard, ...cands]; const hp = place(works);`
+
+`for (const c of cands) hp[c.id] = { q: 1, r: 0 }; for (const h of heard) hp[h.id] = { q: 0, r: 0 };`
+
+`const v = computeVisibility(works, hp, L, cfg);`
+
+`assert.ok(v.visible.has(cands[0].id), 'essential should be visible');`
+
+`assert.ok(!v.visible.has(cands[1].id), 'cult should be hidden');`
+
+`assert.ok(!v.visible.has(cands[2].id), 'deep cut should be hidden');`
+
+`});`
+
+`test('fog: a pile of niches does not unlock deep cuts without the tiers below', () => {`
+
+`const heard = Array.from({ length: 12 }, () => mk(3, 8));`
+
+`const deep = mk(4, 0, { 0: 1 }, false), niche = mk(3, 0, { 0: 1 }, false);`
+
+`const works = [...heard, deep, niche]; const hp = {};`
+
+`heard.forEach((h) => { hp[h.id] = { q: 0, r: 0 }; }); hp[deep.id] = { q: 1, r: 0 }; hp[niche.id] = { q: 1, r: 0 };`
+
+`const ms = computeMastery(works, cfg);`
+
+`assert.ok(allowedTier('hiphop', ms, cfg) < 3, 'niche should still be locked without lower tiers');`
+
+`assert.ok(!computeVisibility(works, hp, L, cfg).visible.has(deep.id));`
+
+`});`
+
+`test('fog: depth across tiers pushes the fog back and shows rarer works', () => {`
+
+`const heard = [];`
+
+`for (let t = 0; t < 5; t++) for (let i = 0; i < 14; i++) heard.push(mk(t, 9));`
+
+`const ghost = mk(5, 0, { 0: 1 }, false); const deep = mk(4, 0, { 0: 1 }, false);`
+
+`const works = [...heard, ghost, deep]; const hp = {};`
+
+`heard.forEach((h) => { hp[h.id] = { q: 0, r: 0 }; });`
+
+`hp[ghost.id] = { q: 2, r: 0 }; hp[deep.id] = { q: 2, r: 0 };`
+
+`const shallowReach = computeVisibility([...heard.filter((h) => h.tier < 2), ghost], hp, L, cfg);`
+
+`assert.ok(!shallowReach.visible.has(ghost.id));`
+
+`const v = computeVisibility(works, hp, L, cfg);`
+
+`assert.ok(v.visible.has(deep.id), 'deep cut visible when deep in the genre');`
+
+`});`
+
+`test('seed data: computes sensible visibility without throwing', () => {`
+
+`const hp = {}; WORKS.forEach((w, i) => { hp[w.id] = { q: (i % 8) - 4, r: Math.floor(i / 8) - 2 }; });`
+
+`const v = computeVisibility(WORKS, hp, L, cfg);`
+
+`assert.ok(v.visible.size >= WORKS.filter((w) => w.heard).length);`
+
+`});`
+
+`=== FILE: test/layout.test.js ===`
+
+`import test from 'node:test';`
+
+`import assert from 'node:assert/strict';`
+
+`import { plainSettings } from '../src/settings/store.js';`
+
+`import { layout, anchorsFor } from '../src/core/layout.js';`
+
+`import { routeEdges, AXES } from '../src/core/routing.js';`
+
+`import { WORKS, EDGES } from '../src/data/seed.js';`
+
+`const cfg = plainSettings();`
+
+`const works = WORKS.map((w) => ({ ...w }));`
+
+`const L = layout({ works, edges: EDGES, cfg });`
+
+`test('layout: every work rests on a unique lattice point', () => {`
+
+`const keys = new Set(Object.values(L.hex).map((h) => h.q + ',' + h.r));`
+
+`assert.equal(keys.size, WORKS.length);`
+
+`for (const id of Object.keys(L.pos)) {`
+
+`const h = L.hex[id], p = L.lattice.pointOf(h.q, h.r);`
+
+`assert.ok(Math.hypot(p.x - L.pos[id].x, p.y - L.pos[id].y) < 1e-6);`
+
+`}`
+
+`});`
+
+`test('layout: deterministic and anchors fixed', () => {`
+
+`const L2 = layout({ works: WORKS.map((w) => ({ ...w })), edges: EDGES, cfg });`
+
+`assert.deepEqual(L2.hex, L.hex);`
+
+`assert.deepEqual(anchorsFor(cfg), L.anchors);`
+
+`});`
+
+`test('layout: heard works stay out of the center hub', () => {`
+
+`for (const p of Object.values(L.pos)) assert.ok(Math.hypot(p.x, p.y) >= cfg.get('layout.hubRadius'));`
+
+`});`
+
+`test('layout: genre families land in distinct regions', () => {`
+
+`const d = (a, b) => Math.hypot(L.pos[a].x - L.pos[b].x, L.pos[a].y - L.pos[b].y);`
+
+`assert.ok(d('ill', 'gk') < d('ill', 'ko'), 'hip hop works cluster together, away from ambient');`
+
+`assert.ok(d('ty', 'bh') < d('ty', 'sm'));`
+
+`});`
+
+`test('layout: weakly related links sit farther apart than strongly related ones, on average', () => {`
+
+`const lat = L.lattice; let strong = [], weak = [];`
+
+`for (const e of EDGES) (e.sim >= 0.7 ? strong : e.sim <= 0.4 ? weak : []).push(lat.dist(L.hex[e.a], L.hex[e.b]));`
+
+`const avg = (a) => a.reduce((x, y) => x + y, 0) / a.length;`
+
+``assert.ok(avg(weak) >= avg(strong), `weak ${avg(weak)} should be >= strong ${avg(strong)}`);``
+
+`});`
+
+`const half = () => cfg.get('layout.tileSize') / 2;`
+
+`const routes = routeEdges({ centers: L.pos, halfOf: () => half(), edges: EDGES, lattice: L.lattice, cfg });`
+
+`function angleOK(a, b) {`
+
+`const dx = b.x - a.x, dy = b.y - a.y; if (Math.hypot(dx, dy) < 0.01) return true;`
+
+`let deg = Math.atan2(dy, dx) * 180 / Math.PI; deg = ((deg % 180) + 180) % 180;`
+
+`return [0, 60, 120, 90, 30, 150, 180].some((t) => Math.abs(deg - t) < 0.5);`
+
+`}`
+
+`test('routing: every segment runs along a hex axis or its perpendicular (stub)', () => {`
+
+``routes.forEach((r, i) => { for (let k = 1; k < r.points.length; k++) assert.ok(angleOK(r.points[k - 1], r.points[k]), `edge ${i} seg ${k}`); });``
+
+`});`
+
+`test('routing: lanes never come near a tile', () => {`
+
+`const centers = Object.values(L.pos), clear = half() + 4;`
+
+`routes.forEach((r, i) => {`
+
+`for (let k = 1; k < r.points.length - 2; k++) { // lane legs only (skip first and last stub)`
+
+`const a = r.points[k], b = r.points[k + 1];`
+
+`for (const c of centers) {`
+
+`const abx = b.x - a.x, aby = b.y - a.y, t = Math.max(0, Math.min(1, ((c.x - a.x) * abx + (c.y - a.y) * aby) / (abx * abx + aby * aby || 1)));`
+
+`const d = Math.hypot(a.x + abx * t - c.x, a.y + aby * t - c.y);`
+
+``assert.ok(d >= clear, `edge ${i} lane passes ${d.toFixed(1)}px from a tile`);``
+
+`}`
+
+`}`
+
+`});`
+
+`});`
+
+`test('routing: fan-out bundles share a trunk (same stub and first lane point)', () => {`
+
+`const idx = EDGES.map((e, i) => (e.a === 'ill' && e.type === 'influence' ? i : -1)).filter((i) => i >= 0);`
+
+`assert.ok(idx.length >= 3);`
+
+`const first = routes[idx[0]];`
+
+`for (const i of idx) { assert.ok(routes[i].bundle); assert.deepEqual(routes[i].points[0], first.points[0]); assert.deepEqual(routes[i].points[1], first.points[1]); }`
+
+`});`
+
+`test('routing: fan-in bundles share a trunk at the hub end', () => {`
+
+`const idx = EDGES.map((e, i) => (e.b === 'ill' && e.type === 'influence' ? i : -1)).filter((i) => i >= 0);`
+
+`assert.ok(idx.length >= 2);`
+
+`const end = (r) => r.points[r.points.length - 1];`
+
+`for (const i of idx) assert.deepEqual(end(routes[i]), end(routes[idx[0]]));`
+
+`});`
+
+`test('routing: bundling off gives each edge its own route', () => {`
+
+`const c2 = plainSettings({ 'routing.bundle': false });`
+
+`const r2 = routeEdges({ centers: L.pos, halfOf: () => half(), edges: EDGES, lattice: L.lattice, cfg: c2 });`
+
+`assert.ok(r2.every((r) => r.bundle === null));`
+
+`});`
+
+`=== FILE: tools/gen-settings-doc.js ===`
+
+`// Generates docs/SETTINGS.md from the settings definitions. Run: npm run docs`
+
+`import { writeFileSync } from 'node:fs';`
+
+`import { SETTINGS, GROUPS } from '../src/settings/definitions.js';`
+
+``let md = `# Settings reference\n\nGenerated from \`src/settings/definitions.js\` (${SETTINGS.length} settings). Do not edit by hand. Every value is editable in the in-app Settings panel, which is built from the same list.\n\n`;``
+
+`for (const [g, name] of GROUPS) {`
+
+`const rows = SETTINGS.filter((s) => s.group === g);`
+
+``md += `## ${name}\n\n| Key | Name | Default | Range | What it does |\n|---|---|---|---|---|\n`;``
+
+`for (const s of rows) {`
+
+``const range = s.type === 'number' ? `${s.min ?? ''} to ${s.max ?? ''}${s.unit ? ' ' + s.unit : ''}` : s.type === 'select' ? s.options.join(' / ') : s.type;``
+
+``md += `| \`${s.key}\` | ${s.label} | \`${String(s.default) || '(empty)'}\` | ${range} | ${s.help.replace(/\|/g, '/')} |\n`;``
+
+`}`
+
+`md += '\n';`
+
+`}`
+
+`writeFileSync(new URL('../docs/SETTINGS.md', import.meta.url), md);`
+
+`console.log('wrote docs/SETTINGS.md', SETTINGS.length);`
+
+`=== FILE: tools/gen-wheel.js ===`
+
+`// Mastery wheel: one slice per genre family, rings outward are rarity tiers. Lit = unlocked, partial arc = progress to the next ring.`
+
+`import { writeFileSync } from 'node:fs';`
+
+`import { plainSettings } from '../src/settings/store.js';`
+
+`import { TIER_IDS, FAMILY_IDS } from '../src/settings/definitions.js';`
+
+`import { computeMastery, allowedTier } from '../src/core/fog.js';`
+
+`import { WORKS } from '../src/data/seed.js';`
+
+`const cfg = plainSettings(); const ms = computeMastery(WORKS, cfg);`
+
+`const C = 360, R0 = 62, T = 34, G = 5, N = FAMILY_IDS.length, GAP = 2.2;`
+
+`const pt = (r, a) => [C + r * Math.cos(a), C + r * Math.sin(a)];`
+
+``const arc = (r0, r1, a0, a1) => { const [x0, y0] = pt(r1, a0), [x1, y1] = pt(r1, a1), [x2, y2] = pt(r0, a1), [x3, y3] = pt(r0, a0); const big = a1 - a0 > Math.PI ? 1 : 0; return `M${x0} ${y0}A${r1} ${r1} 0 ${big} 1 ${x1} ${y1}L${x2} ${y2}A${r0} ${r0} 0 ${big} 0 ${x3} ${y3}Z`; };``
+
+``let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 720" width="720" height="720" role="img" aria-label="Mastery wheel"><rect width="720" height="720" fill="#0B0E12"/>`;``
+
+`FAMILY_IDS.forEach((f, i) => {`
+
+``const hue = cfg.get(`genres.${f}.hue`), a0 = -Math.PI / 2 + i * 2 * Math.PI / N + GAP * Math.PI / 180, a1 = -Math.PI / 2 + (i + 1) * 2 * Math.PI / N - GAP * Math.PI / 180;``
+
+`const allowed = allowedTier(f, ms, cfg);`
+
+`TIER_IDS.forEach((t, k) => {`
+
+`const r0 = R0 + k * (T + G), r1 = r0 + T;`
+
+``svg += `<path d="${arc(r0, r1, a0, a1)}" fill="#161C23"/>`;``
+
+`const lit = k <= allowed; let frac = 0;`
+
+``if (lit) frac = 1; else if (k === allowed + 1) frac = Math.min(1, ms.mastery[f] / cfg.get(`tiers.${t}.unlockMastery`));``
+
+``if (frac > 0) svg += `<path d="${arc(r0, r1, a0, a0 + (a1 - a0) * frac)}" fill="hsl(${hue} ${lit ? 62 : 40}% ${28 + k * 6}%)" ${lit ? '' : 'opacity=".7"'}/>`;``
+
+``svg += `<path d="${arc(r0, r1, a0, a1)}" fill="none" stroke="${cfg.get(`tiers.${t}.color`)}" stroke-width="${lit ? 1.5 : 0.6}" opacity="${lit ? 0.9 : 0.35}"/>`;``
+
+`});`
+
+`const am = (a0 + a1) / 2, [lx, ly] = pt(R0 + N * (T + G) - G + 36, am);`
+
+``svg += `<text x="${lx}" y="${ly}" text-anchor="middle" font-family="system-ui,sans-serif" font-size="13" fill="hsl(${hue} 70% 72%)">${cfg.get(`genres.${f}.name`)}</text>`;``
+
+`});`
+
+``svg += `<circle cx="${C}" cy="${C}" r="${R0 - 14}" fill="#0B0E12" stroke="#E8E4DA" stroke-width="2"/><circle cx="${C}" cy="${C}" r="10" fill="none" stroke="#E8E4DA" stroke-width="2"/><circle cx="${C}" cy="${C}" r="3" fill="#E8E4DA"/>`;``
+
+``TIER_IDS.forEach((t, k) => { svg += `<text x="${C + 8}" y="${C - R0 - k * (T + G) - T / 2 + 4}" font-family="ui-monospace,monospace" font-size="10" fill="#9AA3AE">${cfg.get(`tiers.${t}.name`)}</text>`; });``
+
+`svg += '</svg>';`
+
+`writeFileSync(new URL('../docs/mastery-wheel.svg', import.meta.url), svg);`
+
+`console.log('wrote docs/mastery-wheel.svg', Object.fromEntries(FAMILY_IDS.map((f) => [f, [Math.round(ms.mastery[f]), allowedTier(f, ms, cfg)]])));`
+
+`=== FILE: tools/dump-layout.js ===`
+
+`// Dumps layout + routes as JSON (used to eyeball the result): node tools/dump-layout.js > /tmp/layout.json`
+
+`import { plainSettings } from '../src/settings/store.js';`
+
+`import { layout } from '../src/core/layout.js';`
+
+`import { routeEdges, pathString } from '../src/core/routing.js';`
+
+`import { WORKS, EDGES } from '../src/data/seed.js';`
+
+`const cfg = plainSettings();`
+
+`const L = layout({ works: WORKS.map((w) => ({ ...w })), edges: EDGES, cfg });`
+
+`const routes = routeEdges({ centers: L.pos, halfOf: () => cfg.get('layout.tileSize') / 2, edges: EDGES, lattice: L.lattice, cfg });`
+
+`console.log(JSON.stringify({ pos: L.pos, routes: routes.map((r, i) => ({ ...r, e: EDGES[i] })), works: WORKS.map((w) => ({ id: w.id, heard: w.heard, title: w.title })), spacing: cfg.get('layout.spacing') }));`

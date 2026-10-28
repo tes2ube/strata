@@ -1,0 +1,216 @@
+﻿
+`=================== FILE: README.md ===================`
+
+`# Strata (working title)`
+
+`A music discovery tree: albums and EPs as tiles on a hex-snapped map, grown outward from works you already know.`
+
+`Genres are hues, rarity is a ring around the art, fog of war hides what you have not earned the depth to see.`
+
+`Zero dependencies. ES modules and Canvas2D. No build step.`
+
+`## Run it`
+
+` ```bash`
+
+`cd strata`
+
+`npm test # 20 tests for layout, routing, fog, rating bar, XP, spotlight, settings`
+
+`npm run serve # then open http://localhost:5173`
+
+`npm run docs # regenerates docs/SETTINGS.md and docs/mastery-wheel.svg`
+
+` ``` `
+
+``You need Node 20+ and Python 3 (only for the tiny static server; any static server works). ES modules do not load from `file://`, so use the server.``
+
+`## What is here`
+
+`| Path | What |`
+
+`|---|---|`
+
+``| `docs/SPEC.md` | Every design decision so far, with status |``
+
+``| `docs/SETTINGS.md` | All ~300 tunables, generated |``
+
+``| `docs/DATA_SOURCES.md` | Accounts to make, APIs, rules |``
+
+``| `docs/mastery-wheel.svg` | The slice-per-genre, ring-per-rarity progress view |``
+
+``| `src/settings/definitions.js` | The single list of every tunable. The Settings panel and docs are built from it |``
+
+``| `src/core/` | Pure logic, tested in Node: `hex`, `layout`, `routing`, `fog`, `rating`, `spotlight`, `xp`, `recency`, `badges` |``
+
+``| `src/data/seed.js` | The 29 works from the mockup |``
+
+``| `src/data/sources.js` | MusicBrainz, Wikipedia, Deezer/iTunes calls (not yet run, needs a browser) |``
+
+``| `src/render/app.js` | Canvas2D map and DOM panels (not yet run in a browser) |``
+
+``| `test/` | `node --test` suites |``
+
+`## Status`
+
+`Tested in Node: settings schema, rating bar mapping, hex lattice, layout snap, hex-lane routing with bundling, fog and mastery rules, spotlight chains, XP math, recency.`
+
+``Written but never run in a browser: `src/render/app.js`, `src/data/sources.js`. Expect small fixes on first load.``
+
+`Not started: real cover art, a persistent work database, recommendation engine, quests and shop logic, chronological/credits/place views, ListenBrainz playlist sync.`
+
+``See `CLAUDE.md` for how to continue with Claude Code.``
+
+`=================== FILE: docs/SPEC.md ===================`
+
+`# Strata spec`
+
+`Status key: **Built** = in code and tested in Node. **Drafted** = in code, never run in a browser. **Settings** = tunables exist, logic does not. **Planned** = not started.`
+
+`## 1. The map`
+
+``- Albums and EPs only (`recs.albumsEpsOnly`). Bias toward the last 50 years, chronicles may reach back to 1900. **Settings**``
+
+`- Seven genre families sit on a fixed ring around a central shelf hub. Each family is a hue; where two meet you see the blend. Subgenres shift lightness. **Built** (hue mixing), **Drafted** (territory glow)`
+
+``- Works rest on a hex lattice but are not assigned a point: a force simulation finds where they want to be, then each work snaps to the nearest free point. Weakly related links get a longer spring, so related-but-not-very works sit a few points apart. Lattice dots are visible for now (`layout.showHexDots`). **Built**``
+
+`- Default spacing is large (120 px) so lines have lanes between works. **Built**`
+
+`- Alternate layouts over the same data: chronological (x = year, lane per family), credits-centered, place. **Planned**`
+
+`## 2. Tiles`
+
+`- Rarity is a colored ring around the art: Mainstream, Essential, Cult, Niche, Deep cut, Ghost. White, green, blue, purple, orange, pale cyan by default. **Drafted**`
+
+`- Badges replace Underground, Landmark and Canon as rarity names. Icons use the work's ring color and a different symbol per badge. Nine so far: Canon, Landmark, Underground, Gateway, Deep end, Origin, Crossover, Wellspring, Rediscovered. Each has an XP multiplier and a mastery multiplier in settings. **Built** (data and multipliers), **Drafted** (icons)`
+
+``- Art of heard works is dimmed; unheard art is bright (`ui.seenDim`). No white ring. **Drafted**``
+
+`- Recency is a small gauge in the tile corner: full for a week, half at 60 days, minimum after a year. Genre labels show "visited N days ago". **Built** (math), **Drafted** (drawing)`
+
+`- Hover over art shows a play button for a 30-second preview. No waveform. **Drafted**`
+
+`## 3. Connections`
+
+`- Relation types: influence (read as "precedent" from the later work and "inspired" from the earlier one), contemporary, personnel, sample, other. **Built**`
+
+``- Names show only on hover of the line or its works (`routing.labelsOnHoverOnly`). **Drafted**``
+
+`- Lines are straight runs joined by rounded corners. Straights follow the three hex axes (0, 60 and 120 degrees) in lanes half a row from the tiles, so they never cross a work. This replaces "orthogonal or diagonal" at 45 degrees, because 45 degree lanes do not stay between tiles on a hex lattice. **Built**`
+
+`- Each tile has six ports. Several lines can leave from different ports, so 30 lines never land on one point. **Built**`
+
+`- Bundling: many lines to or from one work share a trunk (same port, same first lane) and curve off where they must. **Built**`
+
+`- Two works with a third between them route around it on the lanes. **Built** (lanes are always between tiles)`
+
+``- Known tuning issue: fan-in leaves on opposite sides of a hub produce a through-lane with a stub in. Cost knobs: `routing.turnPenalty`, `routing.overlapPenalty`, `routing.portPenalty`.``
+
+`## 4. Spotlight and selection`
+
+`- Hovering a work or line dims everything else and lights the associated works. **Drafted**`
+
+``- Selecting shows the work and everything within `spotlight.chainDepth` links. Which relation types continue the chain is toggled in the legend (precedent, inspired, contemporary, personnel, sample). Multiple works can be selected with the multi-select key. **Built** (logic), **Drafted** (legend)``
+
+`## 5. Fog of war`
+
+`- Fog is driven by depth, not by count. Each genre family has a mastery score from the works you have heard, weighted by tier, rating and badges, with diminishing returns per tier. **Built**`
+
+``- A tier unlocks in a genre when mastery reaches its threshold and you have heard enough works in the tier below or rarer (`tiers.*.unlockMastery`, `tiers.*.prereqWorks`). **Built**``
+
+``- A heard work pushes the fog back by `fog.baseSteps` plus a bonus that grows with its tier and with how deep you are in that genre, and can reveal works up to `fog.tierAhead` tiers rarer, capped by what the genre has unlocked. So:``
+
+`- A few mainstream hits reveal Essential works and then a Cult one as depth grows.`
+
+`- A pile of niches outposts a couple of neighbors but cannot unlock deep cuts without the tiers below.`
+
+`- Being deep across tiers pulls rare works into view.`
+
+`**Built** (tests cover each case)`
+
+``- Per-subgenre depth is a flag (`fog.perSubgenre`), off. **Settings**``
+
+`## 6. Mastery wheel`
+
+``One slice per genre family, rings outward are rarity tiers. Mainstream is lit from the start; unlocks light up outer segments, a partial arc shows progress to the next ring. See `docs/mastery-wheel.svg`. Interactive version **Planned**.``
+
+`## 7. Rating`
+
+`- Vertical bar along the left edge of the info panel. Clean bar; hovering shows light / decent / strong labels. Left, middle and right thirds of an integer slice give light, decent, strong. Near a border you get light/decent 8, decent/strong 8, or strong 8 / light 9. **Built**`
+
+``- Numeric value: decent = n, light = n minus step, strong = n plus step (`rating.subStep`). Ratings above `recs.ratingNeutral` pull recommendations toward similar works; below push away. **Built** (bar), **Settings** (recs)``
+
+`## 8. XP, points, progression`
+
+`- Everything is earned by discovery behavior, never listening hours. Sources: rating, reach (first work in a family or subgenre), rarity, lineage and credit-hops, chains, Foundations, chronicles, surprise (rating far from the model's prediction), rested bonus after time away. **Built** (rating XP, chains, rested, surprise, leaps), **Settings** (the rest)`
+
+``- Threads, not streaks: each followed line has its own chain; jumping elsewhere pauses it, never resets it. Chain bonus caps (`xp.chainCap`). Nothing is ever deducted. **Built** (math), **Planned** (thread tracking)``
+
+`- Every XP and point value is exposed in Settings with an explanation. **Built**`
+
+`## 9. Quests`
+
+`- Chronicles (one-time historical stories): the Amen Break, Native Tongues, Berlin 1977, two capitals of punk, sampling in court, sound systems to rave, and others reaching back to 1900. Each adds culture context and rewards XP, points and an era lens. **Settings**, content **Planned**`
+
+`- Repeatables: weekly gateway, credit hop, counterpoint, blind-spot probe, re-listen, Foundations run (per genre). **Settings**`
+
+`## 10. Unlocks and consumables`
+
+`- Permanent, slow (days to months): Credits Lens, secondary credits free after N lookups, Era Lens, Wormholes, Personnel graph, Place overlay, subgenre charters (need Foundations in the parent), family charters. Optional minimum-time gates. **Settings**`
+
+`- Repeatable packs: lens packs, scout flares, dowsing rods, rarity rolls. When a pack runs out, earn more through targeted or general quests. **Settings**`
+
+`- Respec is always free. Export is never an unlock.`
+
+`## 11. Map slots`
+
+``Slots are only initial placement. Off by default (`slots.enabled`). When on, placing a work on the map costs one; the shelf is always unlimited. Models to compare: open (off) and earned (on). **Settings**``
+
+`## 12. Data`
+
+``Fetch on the fly from MusicBrainz, ListenBrainz, Wikipedia and others; cache locally. See `docs/DATA_SOURCES.md`. Bios from Wikipedia with attribution. **Drafted**``
+
+`## 13. Saving`
+
+`Progress and settings persist in localStorage now; IndexedDB and JSON export/import planned. Settings export/import **Built**.`
+
+`## 14. Removed since the first mockup`
+
+`Discovery dial, waveform, "sample another track", the heard/unheard white ring, time-lapse, export-as-unlock, open-ended pack of fixed slot counts.`
+
+`=================== FILE: docs/DATA_SOURCES.md ===================`
+
+`# Data sources and accounts`
+
+`Verified October 2026. Re-check terms before relying on any of this.`
+
+`| Service | Account | Use | Notes |`
+
+`|---|---|---|---|`
+
+`| MusicBrainz | Free, optional for reads | Albums, EPs, credits, relationships (producer, sample, cover) | About 1 request per second. Send a descriptive app name. Collections need an account. |`
+
+`| ListenBrainz | Same login as MusicBrainz | Collaborative filtering, similarity, playlists (JSPF) | Playlists are track-based. Keep your album "keep" list in a MusicBrainz collection. |`
+
+`| Discogs | Free account + personal token | Styles, have/want counts (good obscurity signal), notes | Token raises the rate limit from 25 to 60 requests per minute. |`
+
+`| Last.fm | Free API key | Tags, similar artists | Non-commercial by default; check current terms. Tags are noisy. |`
+
+`| Wikipedia / Wikidata | None | Bios, "influenced by" | Wikipedia text is CC BY-SA: show attribution (the app does). |`
+
+`| Cover Art Archive | None | Cover art by MusicBrainz id | |`
+
+`| Deezer / iTunes Search | None | 30 second previews | Deezer's API has no CORS headers, so it needs a small proxy. iTunes Search usually works directly. |`
+
+`| RateYourMusic | n/a | Genre tree inspiration only | No public API. Registering interest in API/dataset access is possible. Do not scrape. |`
+
+`| Bandcamp | n/a | "Listen here" links | No public API. |`
+
+`## Bios`
+
+`Wikipedia first, then MusicBrainz annotations, then Discogs notes. Always show the source and link.`
+
+`## Time bias`
+
+``Recommendations weight the last 50 years more (`quests.recentBias`, `quests.recentYearsWindow`). Chronicles may reach back to 1900 (`quests.earliestYear`).``
